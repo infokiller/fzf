@@ -35,13 +35,17 @@ __fzf_cd__() {
   dir=$(eval "$cmd" | $(__fzfcmd) +m) && printf 'cd %q' "$dir"
 }
 
+function remove_date_from_command_history() {
+  awk '{ s = ""; for (i = 4; i <= NF; i++) s = s $i " "; print s }'
+}
+
 __fzf_history__() (
   local line
   shopt -u nocaseglob nocasematch
   line=$(
-    HISTTIMEFORMAT= history |
-    $(__fzfcmd) +s --tac +m -n2..,.. --tiebreak=index --toggle-sort=ctrl-r |
-    \grep '^ *[0-9]') &&
+    tail -10000 ~/.config/history-files/persistent_shell_history |
+    $(__fzfcmd) --tac +s +m -n3..,.. --tiebreak=index --toggle-sort=ctrl-r --exact |
+    \grep '^ *[0-9]' | remove_date_from_command_history) &&
     if [[ $- =~ H ]]; then
       sed 's/^ *\([0-9]*\)\** .*/!\1/' <<< "$line"
     else

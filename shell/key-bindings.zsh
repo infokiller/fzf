@@ -35,15 +35,20 @@ fzf-cd-widget() {
 zle     -N    fzf-cd-widget
 bindkey '\ec' fzf-cd-widget
 
+
+function remove_date_from_command_history() {
+  awk '{ s = ""; for (i = 4; i <= NF; i++) s = s $i " "; print s }'
+}
+
 # CTRL-R - Paste the selected command from history into the command line
 fzf-history-widget() {
-  local selected num
-  selected=( $(fc -l 1 | $(__fzfcmd) +s --tac +m -n2..,.. --tiebreak=index --toggle-sort=ctrl-r -q "${LBUFFER//$/\\$}") )
-  if [ -n "$selected" ]; then
-    num=$selected[1]
-    if [ -n "$num" ]; then
-      zle vi-fetch-history -n $num
-    fi
+  local line
+  line=$( tail -10000 ~/.config/history-files/persistent_shell_history |
+    $(__fzfcmd) --tac +s +m -n3..,.. --tiebreak=index --toggle-sort=ctrl-r -q "${LBUFFER//$/\\$}" --exact |
+    \grep '^ *[0-9]' | remove_date_from_command_history )
+  if [ -n $line ]; then
+    LBUFFER="$line"
+    RBUFFER=""
   fi
   zle redisplay
 }
