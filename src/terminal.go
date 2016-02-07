@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"regexp"
 	"sort"
@@ -22,6 +21,7 @@ import (
 
 // Terminal represents terminal input/output
 type Terminal struct {
+	initDelay  time.Duration
 	inlineInfo bool
 	prompt     string
 	reverse    bool
@@ -50,7 +50,7 @@ type Terminal struct {
 	progress   int
 	reading    bool
 	merger     *Merger
-	selected   map[uint32]selectedItem
+	selected   map[int32]selectedItem
 	reqBox     *util.EventBox
 	eventBox   *util.EventBox
 	mutex      sync.Mutex
@@ -125,6 +125,8 @@ const (
 	actToggleAll
 	actToggleDown
 	actToggleUp
+	actToggleIn
+	actToggleOut
 	actDown
 	actUp
 	actPageUp
@@ -196,7 +198,14 @@ func NewTerminal(opts *Options, eventBox *util.EventBox) *Terminal {
 		header = reverseStringArray(opts.Header)
 	}
 	_tabStop = opts.Tabstop
+	var delay time.Duration
+	if opts.Tac {
+		delay = initialDelayTac
+	} else {
+		delay = initialDelay
+	}
 	return &Terminal{
+		initDelay:  delay,
 		inlineInfo: opts.InlineInfo,
 		prompt:     opts.Prompt,
 		reverse:    opts.Reverse,
@@ -223,7 +232,7 @@ func NewTerminal(opts *Options, eventBox *util.EventBox) *Terminal {
 		ansi:       opts.Ansi,
 		reading:    true,
 		merger:     EmptyMerger,
-		selected:   make(map[uint32]selectedItem),
+		selected:   make(map[int32]selectedItem),
 		reqBox:     util.NewEventBox(),
 		eventBox:   eventBox,
 		mutex:      sync.Mutex{},
@@ -464,9 +473,8 @@ func (t *Terminal) printHeader() {
 		state = newState
 		item := &Item{
 			text:   []rune(trimmed),
-			index:  0,
 			colors: colors,
-			rank:   Rank{0, 0, 0}}
+			rank:   buildEmptyRank(0)}
 
 		t.move(line, 2, true)
 		t.printHighlighted(item, false, C.ColHeader, 0, false)
@@ -491,7 +499,7 @@ func (t *Terminal) printList() {
 }
 
 func (t *Terminal) printItem(item *Item, current bool) {
-	_, selected := t.selected[item.index]
+	_, selected := t.selected[item.Index()]
 	if current {
 		C.CPrint(C.ColCursor, true, ">")
 		if selected {
@@ -711,7 +719,7 @@ func quoteEntry(entry string) string {
 
 func executeCommand(template string, replacement string) {
 	command := strings.Replace(template, "{}", replacement, -1)
-	cmd := exec.Command("sh", "-c", command)
+	cmd := util.ExecCommand(command)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -725,7 +733,7 @@ func (t *Terminal) Loop() {
 	<-t.startChan
 	{ // Late initialization
 		intChan := make(chan os.Signal, 1)
-		signal.Notify(intChan, os.Interrupt, os.Kill)
+		signal.Notify(intChan, os.Interrupt, os.Kill, syscall.SIGTERM)
 		go func() {
 			<-intChan
 			t.reqBox.Set(reqQuit, nil)
@@ -750,7 +758,7 @@ func (t *Terminal) Loop() {
 		t.printHeader()
 		t.mutex.Unlock()
 		go func() {
-			timer := time.NewTimer(initialDelay)
+			timer := time.NewTimer(t.initDelay)
 			<-timer.C
 			t.reqBox.Set(reqRefresh, nil)
 		}()
@@ -836,8 +844,8 @@ func (t *Terminal) Loop() {
 			}
 		}
 		selectItem := func(item *Item) bool {
-			if _, found := t.selected[item.index]; !found {
-				t.selected[item.index] = selectedItem{time.Now(), item.StringPtr(t.ansi)}
+			if _, found := t.selected[item.Index()]; !found {
+				t.selected[item.Index()] = selectedItem{time.Now(), item.StringPtr(t.ansi)}
 				return true
 			}
 			return false
@@ -845,7 +853,7 @@ func (t *Terminal) Loop() {
 		toggleY := func(y int) {
 			item := t.merger.Get(y)
 			if !selectItem(item) {
-				delete(t.selected, item.index)
+				delete(t.selected, item.Index())
 			}
 		}
 		toggle := func() {
@@ -934,7 +942,7 @@ func (t *Terminal) Loop() {
 				if t.multi {
 					for i := 0; i < t.merger.Length(); i++ {
 						item := t.merger.Get(i)
-						delete(t.selected, item.index)
+						delete(t.selected, item.Index())
 					}
 					req(reqList, reqInfo)
 				}
@@ -950,6 +958,16 @@ func (t *Terminal) Loop() {
 					}
 					req(reqList, reqInfo)
 				}
+			case actToggleIn:
+				if t.reverse {
+					return doAction(actToggleUp, mapkey)
+				}
+				return doAction(actToggleDown, mapkey)
+			case actToggleOut:
+				if t.reverse {
+					return doAction(actToggleDown, mapkey)
+				}
+				return doAction(actToggleUp, mapkey)
 			case actToggleDown:
 				if t.multi && t.merger.Length() > 0 {
 					toggle()

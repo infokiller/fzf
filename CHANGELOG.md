@@ -1,6 +1,36 @@
 CHANGELOG
 =========
 
+0.11.3
+------
+
+- Graceful exit on SIGTERM (#482)
+- `$SHELL` instead of `sh` for `execute` action and `$FZF_DEFAULT_COMMAND` (#481)
+- Changes in fuzzy completion API
+    - [`_fzf_compgen_{path,dir}`](https://github.com/junegunn/fzf/commit/9617647)
+    - [`_fzf_complete_COMMAND_post`](https://github.com/junegunn/fzf/commit/8206746)
+      for post-processing
+
+0.11.2
+------
+
+- `--tiebreak` now accepts comma-separated list of sort criteria
+    - Each criterion should appear only once in the list
+    - `index` is only allowed at the end of the list
+    - `index` is implicitly appended to the list when not specified
+    - Default is `length` (or equivalently `length,index`)
+- `begin` criterion will ignore leading whitespaces when calculating the index
+- Added `toggle-in` and `toggle-out` actions
+    - Switch direction depending on `--reverse`-ness
+    - `export FZF_DEFAULT_OPTS="--bind tab:toggle-out,shift-tab:toggle-in"`
+- Reduced the initial delay when `--tac` is not given
+    - fzf defers the initial rendering of the screen up to 100ms if the input
+      stream is ongoing to prevent unnecessary redraw during the initial
+      phase. However, 100ms delay is quite noticeable and might give the
+      impression that fzf is not snappy enough. This commit reduces the
+      maximum delay down to 20ms when `--tac` is not specified, in which case
+      the input list quickly fills the entire screen.
+
 0.11.1
 ------
 
