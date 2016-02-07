@@ -41,7 +41,7 @@ bindkey '\ec' fzf-cd-widget
 # CTRL-R - Paste the selected command from history into the command line
 fzf-history-widget() {
   local line
-  line="$(fzf-select-persistent-history-line)"
+  line="$(fzf-select-persistent-history-line dummy_arg)"
   if [[ -n $line ]]; then
     LBUFFER="$line"
     RBUFFER=""
