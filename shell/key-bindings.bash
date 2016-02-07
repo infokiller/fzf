@@ -13,6 +13,9 @@ __fzf_select__() {
 
 if [[ $- =~ i ]]; then
 
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+source "$DIR/key-bindings-portable.bash"
+
 __fzfcmd() {
   [ ${FZF_TMUX:-1} -eq 1 ] && echo "fzf-tmux -d${FZF_TMUX_HEIGHT:-40%}" || echo "fzf"
 }
@@ -48,19 +51,10 @@ function remove_date_from_command_history() {
   awk '{ s = ""; for (i = 4; i <= NF; i++) s = s $i " "; print s }'
 }
 
-__fzf_history__() (
-  local line
+__fzf_history__() {
   shopt -u nocaseglob nocasematch
-  line=$(
-    tail -10000 ~/.config/history-files/persistent_shell_history |
-    $(__fzfcmd) --tac +s +m -n3..,.. --tiebreak=index --toggle-sort=ctrl-r --exact |
-    \grep '^ *[0-9]' | remove_date_from_command_history) &&
-    if [[ $- =~ H ]]; then
-      sed 's/^ *\([0-9]*\)\** .*/!\1/' <<< "$line"
-    else
-      sed 's/^ *\([0-9]*\)\** *//' <<< "$line"
-    fi
-)
+  fzf-select-persistent-history-line
+}
 
 __use_tmux=0
 __use_tmux_auto=0

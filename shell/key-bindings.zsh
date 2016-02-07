@@ -2,6 +2,9 @@
 # ------------
 if [[ $- == *i* ]]; then
 
+DIR="$(dirname $0)"
+source "$DIR/key-bindings-portable.bash"
+
 # CTRL-T - Paste the selected file path(s) into the command line
 __fsel() {
   local cmd="${FZF_CTRL_T_COMMAND:-"command find -L . \\( -path '*/\\.*' -o -fstype 'dev' -o -fstype 'proc' \\) -prune \
@@ -35,18 +38,11 @@ fzf-cd-widget() {
 zle     -N    fzf-cd-widget
 bindkey '\ec' fzf-cd-widget
 
-
-function remove_date_from_command_history() {
-  awk '{ s = ""; for (i = 4; i <= NF; i++) s = s $i " "; print s }'
-}
-
 # CTRL-R - Paste the selected command from history into the command line
 fzf-history-widget() {
   local line
-  line=$( tail -10000 ~/.config/history-files/persistent_shell_history |
-    $(__fzfcmd) --tac +s +m -n3..,.. --tiebreak=index --toggle-sort=ctrl-r -q "${LBUFFER//$/\\$}" --exact |
-    \grep '^ *[0-9]' | remove_date_from_command_history )
-  if [ -n $line ]; then
+  line="$(fzf-select-persistent-history-line)"
+  if [[ -n $line ]]; then
     LBUFFER="$line"
     RBUFFER=""
   fi
