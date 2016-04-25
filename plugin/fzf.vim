@@ -1,4 +1,4 @@
-" Copyright (c) 2015 Junegunn Choi
+" Copyright (c) 2016 Junegunn Choi
 "
 " MIT License
 "
@@ -74,7 +74,7 @@ function! s:shellesc(arg)
 endfunction
 
 function! s:escape(path)
-  return escape(a:path, ' %#''"\')
+  return escape(a:path, ' $%#''"\')
 endfunction
 
 " Upgrade legacy options
@@ -121,6 +121,10 @@ try
     throw v:exception
   endtry
 
+  if !has_key(dict, 'source') && !empty($FZF_DEFAULT_COMMAND)
+    let dict.source = $FZF_DEFAULT_COMMAND
+  endif
+
   if has_key(dict, 'source')
     let source = dict.source
     let type = type(source)
@@ -139,17 +143,13 @@ try
   let tmux = !has('nvim') && s:tmux_enabled() && s:splittable(dict)
   let command = prefix.(tmux ? s:fzf_tmux(dict) : fzf_exec).' '.optstr.' > '.temps.result
 
-  try
-    if tmux
-      return s:execute_tmux(dict, command, temps)
-    elseif has('nvim')
-      return s:execute_term(dict, command, temps)
-    else
-      return s:execute(dict, command, temps)
-    endif
-  finally
-    call s:popd(dict)
-  endtry
+  if has('nvim')
+    return s:execute_term(dict, command, temps)
+  endif
+
+  let ret = tmux ? s:execute_tmux(dict, command, temps) : s:execute(dict, command, temps)
+  call s:popd(dict, ret)
+  return ret
 finally
   let &shell = oshell
 endtry
@@ -193,16 +193,28 @@ function! s:pushd(dict)
       return 1
     endif
     let a:dict.prev_dir = cwd
-    execute 'chdir '.s:escape(a:dict.dir)
+    execute 'chdir' s:escape(a:dict.dir)
     let a:dict.dir = getcwd()
     return 1
   endif
   return 0
 endfunction
 
-function! s:popd(dict)
-  if has_key(a:dict, 'prev_dir')
-    execute 'chdir '.s:escape(remove(a:dict, 'prev_dir'))
+function! s:popd(dict, lines)
+  " Since anything can be done in the sink function, there is no telling that
+  " the change of the working directory was made by &autochdir setting.
+  "
+  " We use the following heuristic to determine whether to restore CWD:
+  " - Always restore the current directory when &autochdir is disabled.
+  "   FIXME This makes it impossible to change directory from inside the sink
+  "   function when &autochdir is not used.
+  " - In case of an error or an interrupt, a:lines will be empty.
+  "   And it will be an array of a single empty string when fzf was finished
+  "   without a match. In these cases, we presume that the change of the
+  "   directory is not expected and should be undone.
+  if has_key(a:dict, 'prev_dir') &&
+        \ (!&autochdir || (empty(a:lines) || len(a:lines) == 1 && empty(a:lines[0])))
+    execute 'chdir' s:escape(remove(a:dict, 'prev_dir'))
   endif
 endfunction
 
@@ -231,7 +243,7 @@ function! s:exit_handler(code, command, ...)
   return 1
 endfunction
 
-function! s:execute(dict, command, temps)
+function! s:execute(dict, command, temps) abort
   call s:pushd(a:dict)
   silent! !clear 2> /dev/null
   let escaped = escape(substitute(a:command, '\n', '\\n', 'g'), '%#')
@@ -247,7 +259,7 @@ function! s:execute(dict, command, temps)
   return s:exit_handler(v:shell_error, command) ? s:callback(a:dict, a:temps) : []
 endfunction
 
-function! s:execute_tmux(dict, command, temps)
+function! s:execute_tmux(dict, command, temps) abort
   let command = a:command
   if s:pushd(a:dict)
     " -c '#{pane_current_path}' is only available on tmux 1.9 or above
@@ -277,7 +289,7 @@ function! s:calc_size(max, val, dict)
 endfunction
 
 function! s:getpos()
-  return {'tab': tabpagenr(), 'win': winnr(), 'cnt': winnr('$')}
+  return {'tab': tabpagenr(), 'win': winnr(), 'cnt': winnr('$'), 'tcnt': tabpagenr('$')}
 endfunction
 
 function! s:split(dict)
@@ -299,29 +311,33 @@ function! s:split(dict)
         endif
         execute cmd sz.'new'
         execute resz sz
-        return
+        return {}
       endif
     endfor
     if s:present(a:dict, 'window')
       execute a:dict.window
     else
-      tabnew
+      execute (tabpagenr()-1).'tabnew'
     endif
+    return { '&l:wfw': &l:wfw, '&l:wfh': &l:wfh }
   finally
-    setlocal winfixwidth winfixheight buftype=nofile bufhidden=wipe nobuflisted
+    setlocal winfixwidth winfixheight
   endtry
 endfunction
 
-function! s:execute_term(dict, command, temps)
-  call s:split(a:dict)
-  call s:pushd(a:dict)
+function! s:execute_term(dict, command, temps) abort
+  let winopts = s:split(a:dict)
 
-  let fzf = { 'buf': bufnr('%'), 'dict': a:dict, 'temps': a:temps, 'name': 'FZF' }
+  let fzf = { 'buf': bufnr('%'), 'dict': a:dict, 'temps': a:temps, 'name': 'FZF', 'winopts': winopts }
   let s:command = a:command
   function! fzf.on_exit(id, code)
     let pos = s:getpos()
     let inplace = pos == s:ppos " {'window': 'enew'}
-    if !inplace
+    if inplace
+      for [opt, val] in items(self.winopts)
+        execute 'let' opt '=' val
+      endfor
+    else
       if bufnr('') == self.buf
         " We use close instead of bd! since Vim does not close the split when
         " there's no other listed buffer (nvim +'set nobuflisted')
@@ -337,8 +353,9 @@ function! s:execute_term(dict, command, temps)
     endif
 
     call s:pushd(self.dict)
+    let ret = []
     try
-      call s:callback(self.dict, self.temps)
+      let ret = s:callback(self.dict, self.temps)
 
       if inplace && bufnr('') == self.buf
         execute "normal! \<c-^>"
@@ -348,21 +365,23 @@ function! s:execute_term(dict, command, temps)
         endif
       endif
     finally
-      call s:popd(self.dict)
+      call s:popd(self.dict, ret)
     endtry
   endfunction
 
+  call s:pushd(a:dict)
   call termopen(a:command, fzf)
+  call s:popd(a:dict, [])
+  setlocal nospell bufhidden=wipe nobuflisted
   setf fzf
   startinsert
   return []
 endfunction
 
-function! s:callback(dict, temps)
+function! s:callback(dict, temps) abort
+let lines = []
 try
-  if !filereadable(a:temps.result)
-    let lines = []
-  else
+  if filereadable(a:temps.result)
     let lines = readfile(a:temps.result)
     if has_key(a:dict, 'sink')
       for line in lines
@@ -381,12 +400,12 @@ try
   for tf in values(a:temps)
     silent! call delete(tf)
   endfor
-
-  return lines
 catch
   if stridx(v:exception, ':E325:') < 0
     echoerr v:exception
   endif
+finally
+  return lines
 endtry
 endfunction
 

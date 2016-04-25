@@ -10,12 +10,32 @@
 # - $FZF_COMPLETION_TRIGGER (default: '**')
 # - $FZF_COMPLETION_OPTS    (default: empty)
 
+# To use custom commands instead of find, override _fzf_compgen_{path,dir}
+if ! declare -f _fzf_compgen_path > /dev/null; then
+  _fzf_compgen_path() {
+    echo "$1"
+    \find -L "$1" \
+      -name .git -prune -o -name .svn -prune -o \( -type d -o -type f -o -type l \) \
+      -a -not -path "$1" -print 2> /dev/null | sed 's@^\./@@'
+  }
+fi
+
+if ! declare -f _fzf_compgen_dir > /dev/null; then
+  _fzf_compgen_dir() {
+    \find -L "$1" \
+      -name .git -prune -o -name .svn -prune -o -type d \
+      -a -not -path "$1" -print 2> /dev/null | sed 's@^\./@@'
+  }
+fi
+
+###########################################################
+
 __fzf_generic_path_completion() {
-  local base lbuf find_opts fzf_opts suffix tail fzf dir leftover matches nnm
+  local base lbuf compgen fzf_opts suffix tail fzf dir leftover matches nnm
   # (Q) flag removes a quoting level: "foo\ bar" => "foo bar"
   base=${(Q)1}
   lbuf=$2
-  find_opts=$3
+  compgen=$3
   fzf_opts=$4
   suffix=$5
   tail=$6
@@ -33,8 +53,8 @@ __fzf_generic_path_completion() {
       [ -z "$dir" ] && dir='.'
       [ "$dir" != "/" ] && dir="${dir/%\//}"
       dir=${~dir}
-      matches=$(\find -L "$dir" ${=find_opts} -a -not -path "$dir" -print 2> /dev/null | sed 's@^\./@@' | ${=fzf} ${=FZF_COMPLETION_OPTS} ${=fzf_opts} -q "$leftover" | while read item; do
-        printf "%q$suffix " "$item"
+      matches=$(eval "$compgen $(printf %q "$dir")" | ${=fzf} ${=FZF_COMPLETION_OPTS} ${=fzf_opts} -q "$leftover" | while read item; do
+        echo -n "${(q)item}$suffix "
       done)
       matches=${matches% }
       if [ -n "$matches" ]; then
@@ -50,32 +70,33 @@ __fzf_generic_path_completion() {
 }
 
 _fzf_path_completion() {
-  __fzf_generic_path_completion "$1" "$2" \
-    "-name .git -prune -o -name .svn -prune -o ( -type d -o -type f -o -type l )" \
+  __fzf_generic_path_completion "$1" "$2" _fzf_compgen_path \
     "-m" "" " "
 }
 
 _fzf_dir_completion() {
-  __fzf_generic_path_completion "$1" "$2" \
-    "-name .git -prune -o -name .svn -prune -o -type d" \
+  __fzf_generic_path_completion "$1" "$2" _fzf_compgen_dir \
     "" "/" ""
 }
 
 _fzf_feed_fifo() (
-  rm -f "$fifo"
-  mkfifo "$fifo"
-  cat <&0 > "$fifo" &
+  rm -f "$1"
+  mkfifo "$1"
+  cat <&0 > "$1" &
 )
 
 _fzf_complete() {
-  local fifo fzf_opts lbuf fzf matches
+  local fifo fzf_opts lbuf fzf matches post
   fifo="${TMPDIR:-/tmp}/fzf-complete-fifo-$$"
   fzf_opts=$1
   lbuf=$2
+  post="${funcstack[2]}_post"
+  type $post > /dev/null 2>&1 || post=cat
+
   [ ${FZF_TMUX:-1} -eq 1 ] && fzf="fzf-tmux -d ${FZF_TMUX_HEIGHT:-40%}" || fzf="fzf"
 
   _fzf_feed_fifo "$fifo"
-  matches=$(cat "$fifo" | ${=fzf} ${=FZF_COMPLETION_OPTS} ${=fzf_opts} -q "${(Q)prefix}" | tr '\n' ' ')
+  matches=$(cat "$fifo" | ${=fzf} ${=FZF_COMPLETION_OPTS} ${=fzf_opts} -q "${(Q)prefix}" | $post | tr '\n' ' ')
   if [ -n "$matches" ]; then
     LBUFFER="$lbuf$matches"
   fi
@@ -124,7 +145,7 @@ fzf-completion() {
   # http://zsh.sourceforge.net/Doc/Release/Expansion.html#Parameter-Expansion-Flags
   tokens=(${(z)LBUFFER})
   if [ ${#tokens} -lt 1 ]; then
-    eval "zle ${fzf_default_completion:-expand-or-complete}"
+    zle ${fzf_default_completion:-expand-or-complete}
     return
   fi
 
@@ -145,7 +166,7 @@ fzf-completion() {
     zle redisplay
   # Trigger sequence given
   elif [ ${#tokens} -gt 1 -a "$tail" = "$trigger" ]; then
-    d_cmds=(cd pushd rmdir)
+    d_cmds=(${=FZF_COMPLETION_DIR_COMMANDS:-cd pushd rmdir})
 
     [ -z "$trigger"      ] && prefix=${tokens[-1]} || prefix=${tokens[-1]:0:-${#trigger}}
     [ -z "${tokens[-1]}" ] && lbuf=$LBUFFER        || lbuf=${LBUFFER:0:-${#tokens[-1]}}
@@ -159,7 +180,7 @@ fzf-completion() {
     fi
   # Fall back to default completion
   else
-    eval "zle ${fzf_default_completion:-expand-or-complete}"
+    zle ${fzf_default_completion:-expand-or-complete}
   fi
 }
 

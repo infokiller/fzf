@@ -9,7 +9,7 @@ __fsel() {
     -o -type d -print \
     -o -type l -print 2> /dev/null | sed 1d | cut -b3-"}"
   eval "$cmd" | $(__fzfcmd) -m | while read item; do
-    printf '%q ' "$item"
+    echo -n "${(q)item} "
   done
   echo
 }
@@ -44,7 +44,7 @@ function remove_date_from_command_history() {
 fzf-history-widget() {
   local line
   line=$( tail -10000 ~/.config/history-files/persistent_shell_history |
-    $(__fzfcmd) --tac +s +m -n3..,.. --tiebreak=index --toggle-sort=ctrl-r -q "${LBUFFER//$/\\$}" --exact |
+    $(__fzfcmd) --tac +s +m -n3..,.. --tiebreak=index --toggle-sort=ctrl-r ${=FZF_CTRL_R_OPTS} --exact -q "${LBUFFER//$/\\$}" |
     \grep '^ *[0-9]' | remove_date_from_command_history )
   if [ -n $line ]; then
     LBUFFER="$line"

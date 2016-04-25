@@ -21,7 +21,7 @@ Pros
 Installation
 ------------
 
-fzf project consists of the followings:
+fzf project consists of the following:
 
 - `fzf` executable
 - `fzf-tmux` script for launching fzf in a tmux pane
@@ -259,6 +259,14 @@ export FZF_COMPLETION_TRIGGER='~~'
 
 # Options to fzf command
 export FZF_COMPLETION_OPTS='+c -x'
+
+# Use ag instead of the default find command for listing candidates.
+# - The first argument to the function is the base path to start traversal
+# - Note that ag only lists files not directories
+# - See the source code (completion.{bash,zsh}) for the details.
+_fzf_compgen_path() {
+  ag -g "" "$1"
+}
 ```
 
 #### Supported commands
@@ -335,7 +343,7 @@ Tips
 
 #### Rendering issues
 
-If you have any rendering issues, check the followings:
+If you have any rendering issues, check the following:
 
 1. Make sure `$TERM` is correctly set. fzf will use 256-color only if it
    contains `256` (e.g. `xterm-256color`)

@@ -27,7 +27,8 @@ const usage = `usage: fzf [options]
     -d, --delimiter=STR   Field delimiter regex for --nth (default: AWK-style)
     +s, --no-sort         Do not sort the result
     --tac                 Reverse the order of the input
-    --tiebreak=CRITERION  Sort criterion when the scores are tied;
+    --tiebreak=CRI[,..]   Comma-separated list of sort criteria to apply
+                          when the scores are tied;
                           [length|begin|end|index] (default: length)
 
   Interface
@@ -41,6 +42,8 @@ const usage = `usage: fzf [options]
     --tabstop=SPACES      Number of spaces for a tab character (default: 8)
     --cycle               Enable cyclic scroll
     --no-hscroll          Disable horizontal scroll
+    --hscroll-off=COL     Number of screen columns to keep to the right of the
+                          highlighted substring (default: 10)
     --inline-info         Display finder info inline with the query
     --prompt=STR          Input prompt (default: '> ')
     --bind=KEYBINDS       Custom key bindings. Refer to the man page.
@@ -75,13 +78,13 @@ const (
 )
 
 // Sort criteria
-type tiebreak int
+type criterion int
 
 const (
-	byLength tiebreak = iota
+	byMatchLen criterion = iota
+	byLength
 	byBegin
 	byEnd
-	byIndex
 )
 
 func defaultMargin() [4]string {
@@ -98,7 +101,7 @@ type Options struct {
 	Delimiter   Delimiter
 	Sort        int
 	Tac         bool
-	Tiebreak    tiebreak
+	Criteria    []criterion
 	Multi       bool
 	Ansi        bool
 	Mouse       bool
@@ -107,6 +110,7 @@ type Options struct {
 	Reverse     bool
 	Cycle       bool
 	Hscroll     bool
+	HscrollOff  int
 	InlineInfo  bool
 	Prompt      string
 	Query       string
@@ -145,7 +149,7 @@ func defaultOptions() *Options {
 		Delimiter:   Delimiter{},
 		Sort:        1000,
 		Tac:         false,
-		Tiebreak:    byLength,
+		Criteria:    []criterion{byMatchLen, byLength},
 		Multi:       false,
 		Ansi:        false,
 		Mouse:       true,
@@ -154,6 +158,7 @@ func defaultOptions() *Options {
 		Reverse:     false,
 		Cycle:       false,
 		Hscroll:     true,
+		HscrollOff:  10,
 		InlineInfo:  false,
 		Prompt:      "> ",
 		Query:       "",
@@ -162,7 +167,7 @@ func defaultOptions() *Options {
 		Filter:      nil,
 		ToggleSort:  false,
 		Expect:      make(map[int]string),
-		Keymap:      defaultKeymap(),
+		Keymap:      make(map[int]actionType),
 		Execmap:     make(map[int]string),
 		PrintQuery:  false,
 		ReadZero:    false,
@@ -361,20 +366,39 @@ func parseKeyChords(str string, message string) map[int]string {
 	return chords
 }
 
-func parseTiebreak(str string) tiebreak {
-	switch strings.ToLower(str) {
-	case "length":
-		return byLength
-	case "index":
-		return byIndex
-	case "begin":
-		return byBegin
-	case "end":
-		return byEnd
-	default:
-		errorExit("invalid sort criterion: " + str)
+func parseTiebreak(str string) []criterion {
+	criteria := []criterion{byMatchLen}
+	hasIndex := false
+	hasLength := false
+	hasBegin := false
+	hasEnd := false
+	check := func(notExpected *bool, name string) {
+		if *notExpected {
+			errorExit("duplicate sort criteria: " + name)
+		}
+		if hasIndex {
+			errorExit("index should be the last criterion")
+		}
+		*notExpected = true
 	}
-	return byLength
+	for _, str := range strings.Split(strings.ToLower(str), ",") {
+		switch str {
+		case "index":
+			check(&hasIndex, "index")
+		case "length":
+			check(&hasLength, "length")
+			criteria = append(criteria, byLength)
+		case "begin":
+			check(&hasBegin, "begin")
+			criteria = append(criteria, byBegin)
+		case "end":
+			check(&hasEnd, "end")
+			criteria = append(criteria, byEnd)
+		default:
+			errorExit("invalid sort criterion: " + str)
+		}
+	}
+	return criteria
 }
 
 func dupeTheme(theme *curses.ColorTheme) *curses.ColorTheme {
@@ -464,7 +488,7 @@ const (
 	escapedComma = 1
 )
 
-func parseKeymap(keymap map[int]actionType, execmap map[int]string, toggleSort bool, str string) (map[int]actionType, map[int]string, bool) {
+func parseKeymap(keymap map[int]actionType, execmap map[int]string, str string) {
 	if executeRegexp == nil {
 		// Backreferences are not supported.
 		// "~!@#$%^&*;/|".each_char.map { |c| Regexp.escape(c) }.map { |c| "#{c}[^#{c}]*#{c}" }.join('|')
@@ -546,6 +570,10 @@ func parseKeymap(keymap map[int]actionType, execmap map[int]string, toggleSort b
 			keymap[key] = actToggleDown
 		case "toggle-up":
 			keymap[key] = actToggleUp
+		case "toggle-in":
+			keymap[key] = actToggleIn
+		case "toggle-out":
+			keymap[key] = actToggleOut
 		case "toggle-all":
 			keymap[key] = actToggleAll
 		case "select-all":
@@ -568,7 +596,6 @@ func parseKeymap(keymap map[int]actionType, execmap map[int]string, toggleSort b
 			keymap[key] = actNextHistory
 		case "toggle-sort":
 			keymap[key] = actToggleSort
-			toggleSort = true
 		default:
 			if isExecuteAction(actLower) {
 				var offset int
@@ -589,7 +616,6 @@ func parseKeymap(keymap map[int]actionType, execmap map[int]string, toggleSort b
 			}
 		}
 	}
-	return keymap, execmap, toggleSort
 }
 
 func isExecuteAction(str string) bool {
@@ -611,13 +637,12 @@ func isExecuteAction(str string) bool {
 	return false
 }
 
-func checkToggleSort(keymap map[int]actionType, str string) map[int]actionType {
+func parseToggleSort(keymap map[int]actionType, str string) {
 	keys := parseKeyChords(str, "key name required")
 	if len(keys) != 1 {
 		errorExit("multiple keys specified")
 	}
 	keymap[firstKey(keys)] = actToggleSort
-	return keymap
 }
 
 func strLines(str string) []string {
@@ -667,7 +692,6 @@ func parseMargin(margin string) [4]string {
 }
 
 func parseOptions(opts *Options, allArgs []string) {
-	keymap := make(map[int]actionType)
 	var historyMax int
 	if opts.History == nil {
 		historyMax = defaultHistoryMax
@@ -715,10 +739,9 @@ func parseOptions(opts *Options, allArgs []string) {
 		case "--expect":
 			opts.Expect = parseKeyChords(nextString(allArgs, &i, "key names required"), "key names required")
 		case "--tiebreak":
-			opts.Tiebreak = parseTiebreak(nextString(allArgs, &i, "sort criterion required"))
+			opts.Criteria = parseTiebreak(nextString(allArgs, &i, "sort criterion required"))
 		case "--bind":
-			keymap, opts.Execmap, opts.ToggleSort =
-				parseKeymap(keymap, opts.Execmap, opts.ToggleSort, nextString(allArgs, &i, "bind expression required"))
+			parseKeymap(opts.Keymap, opts.Execmap, nextString(allArgs, &i, "bind expression required"))
 		case "--color":
 			spec := optionalNextString(allArgs, &i)
 			if len(spec) == 0 {
@@ -727,8 +750,7 @@ func parseOptions(opts *Options, allArgs []string) {
 				opts.Theme = parseTheme(opts.Theme, spec)
 			}
 		case "--toggle-sort":
-			keymap = checkToggleSort(keymap, nextString(allArgs, &i, "key name required"))
-			opts.ToggleSort = true
+			parseToggleSort(opts.Keymap, nextString(allArgs, &i, "key name required"))
 		case "-d", "--delimiter":
 			opts.Delimiter = delimiterRegexp(nextString(allArgs, &i, "delimiter required"))
 		case "-n", "--nth":
@@ -777,6 +799,8 @@ func parseOptions(opts *Options, allArgs []string) {
 			opts.Hscroll = true
 		case "--no-hscroll":
 			opts.Hscroll = false
+		case "--hscroll-off":
+			opts.HscrollOff = nextInt(allArgs, &i, "hscroll offset required")
 		case "--inline-info":
 			opts.InlineInfo = true
 		case "--no-inline-info":
@@ -845,17 +869,15 @@ func parseOptions(opts *Options, allArgs []string) {
 			} else if match, _ := optString(arg, "-s", "--sort="); match {
 				opts.Sort = 1 // Don't care
 			} else if match, value := optString(arg, "--toggle-sort="); match {
-				keymap = checkToggleSort(keymap, value)
-				opts.ToggleSort = true
+				parseToggleSort(opts.Keymap, value)
 			} else if match, value := optString(arg, "--expect="); match {
 				opts.Expect = parseKeyChords(value, "key names required")
 			} else if match, value := optString(arg, "--tiebreak="); match {
-				opts.Tiebreak = parseTiebreak(value)
+				opts.Criteria = parseTiebreak(value)
 			} else if match, value := optString(arg, "--color="); match {
 				opts.Theme = parseTheme(opts.Theme, value)
 			} else if match, value := optString(arg, "--bind="); match {
-				keymap, opts.Execmap, opts.ToggleSort =
-					parseKeymap(keymap, opts.Execmap, opts.ToggleSort, value)
+				parseKeymap(opts.Keymap, opts.Execmap, value)
 			} else if match, value := optString(arg, "--history="); match {
 				setHistory(value)
 			} else if match, value := optString(arg, "--history-size="); match {
@@ -868,6 +890,8 @@ func parseOptions(opts *Options, allArgs []string) {
 				opts.Margin = parseMargin(value)
 			} else if match, value := optString(arg, "--tabstop="); match {
 				opts.Tabstop = atoi(value)
+			} else if match, value := optString(arg, "--hscroll-off="); match {
+				opts.HscrollOff = atoi(value)
 			} else {
 				errorExit("unknown option: " + arg)
 			}
@@ -878,24 +902,35 @@ func parseOptions(opts *Options, allArgs []string) {
 		errorExit("header lines must be a non-negative integer")
 	}
 
+	if opts.HscrollOff < 0 {
+		errorExit("hscroll offset must be a non-negative integer")
+	}
+
 	if opts.Tabstop < 1 {
 		errorExit("tab stop must be a positive integer")
 	}
+}
 
-	// Change default actions for CTRL-N / CTRL-P when --history is used
+func postProcessOptions(opts *Options) {
+	// Default actions for CTRL-N / CTRL-P when --history is set
 	if opts.History != nil {
-		if _, prs := keymap[curses.CtrlP]; !prs {
-			keymap[curses.CtrlP] = actPreviousHistory
+		if _, prs := opts.Keymap[curses.CtrlP]; !prs {
+			opts.Keymap[curses.CtrlP] = actPreviousHistory
 		}
-		if _, prs := keymap[curses.CtrlN]; !prs {
-			keymap[curses.CtrlN] = actNextHistory
+		if _, prs := opts.Keymap[curses.CtrlN]; !prs {
+			opts.Keymap[curses.CtrlN] = actNextHistory
 		}
 	}
 
-	// Override default key bindings
-	for key, act := range keymap {
-		opts.Keymap[key] = act
+	// Extend the default key map
+	keymap := defaultKeymap()
+	for key, act := range opts.Keymap {
+		if act == actToggleSort {
+			opts.ToggleSort = true
+		}
+		keymap[key] = act
 	}
+	opts.Keymap = keymap
 
 	// If we're not using extended search mode, --nth option becomes irrelevant
 	// if it contains the whole range
@@ -915,9 +950,13 @@ func ParseOptions() *Options {
 
 	// Options from Env var
 	words, _ := shellwords.Parse(os.Getenv("FZF_DEFAULT_OPTS"))
-	parseOptions(opts, words)
+	if len(words) > 0 {
+		parseOptions(opts, words)
+	}
 
 	// Options from command-line arguments
 	parseOptions(opts, os.Args[1:])
+
+	postProcessOptions(opts)
 	return opts
 }
