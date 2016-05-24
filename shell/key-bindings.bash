@@ -64,7 +64,7 @@ __fzf_history__() {
     else
       sed 's/^ *\([0-9]*\)\** *//' <<< "$line"
     fi
-)
+}
 
 
 __fzf_use_tmux__() {
