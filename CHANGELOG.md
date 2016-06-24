@@ -1,6 +1,37 @@
 CHANGELOG
 =========
 
+0.13.2
+------
+- Fixed race condition where preview window is not properly cleared
+
+0.13.1
+------
+- Fixed UI issue with large `--preview` output with many ANSI codes
+
+0.13.0
+------
+- Added preview feature
+    - `--preview CMD`
+    - `--preview-window POS[:SIZE][:hidden]`
+- `{}` in execute action is now replaced to the single-quoted (instead of
+  double-quoted) string of the current line
+- Fixed to ignore control characters for bracketed paste mode
+
+0.12.2
+------
+
+- 256-color capability detection does not require `256` in `$TERM`
+- Added `print-query` action
+- More named keys for binding; <kbd>F1</kbd> ~ <kbd>F10</kbd>,
+  <kbd>ALT-/</kbd>, <kbd>ALT-space</kbd>, and <kbd>ALT-enter</kbd>
+- Added `jump` and `jump-accept` actions that implement [EasyMotion][em]-like
+  movement
+  ![][jump]
+
+[em]: https://github.com/easymotion/vim-easymotion
+[jump]: https://cloud.githubusercontent.com/assets/700826/15367574/b3999dc4-1d64-11e6-85da-28ceeb1a9bc2.png
+
 0.12.1
 ------
 

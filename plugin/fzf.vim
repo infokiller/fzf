@@ -49,7 +49,7 @@ function! s:fzf_exec()
       throw 'fzf executable not found'
     endif
   endif
-  return s:exec
+  return s:shellesc(s:exec)
 endfunction
 
 function! s:tmux_enabled()
@@ -140,10 +140,10 @@ try
   else
     let prefix = ''
   endif
-  let tmux = !has('nvim') && s:tmux_enabled() && s:splittable(dict)
+  let tmux = (!has('nvim') || get(g:, 'fzf_prefer_tmux', 0)) && s:tmux_enabled() && s:splittable(dict)
   let command = prefix.(tmux ? s:fzf_tmux(dict) : fzf_exec).' '.optstr.' > '.temps.result
 
-  if has('nvim')
+  if has('nvim') && !tmux
     return s:execute_term(dict, command, temps)
   endif
 
@@ -179,7 +179,7 @@ function! s:fzf_tmux(dict)
     endif
   endfor
   return printf('LINES=%d COLUMNS=%d %s %s %s --',
-    \ &lines, &columns, s:fzf_tmux, size, (has_key(a:dict, 'source') ? '' : '-'))
+    \ &lines, &columns, s:shellesc(s:fzf_tmux), size, (has_key(a:dict, 'source') ? '' : '-'))
 endfunction
 
 function! s:splittable(dict)
@@ -193,7 +193,7 @@ function! s:pushd(dict)
       return 1
     endif
     let a:dict.prev_dir = cwd
-    execute 'chdir' s:escape(a:dict.dir)
+    execute 'lcd' s:escape(a:dict.dir)
     let a:dict.dir = getcwd()
     return 1
   endif
@@ -214,7 +214,7 @@ function! s:popd(dict, lines)
   "   directory is not expected and should be undone.
   if has_key(a:dict, 'prev_dir') &&
         \ (!&autochdir || (empty(a:lines) || len(a:lines) == 1 && empty(a:lines[0])))
-    execute 'chdir' s:escape(remove(a:dict, 'prev_dir'))
+    execute 'lcd' s:escape(remove(a:dict, 'prev_dir'))
   endif
 endfunction
 
@@ -298,7 +298,7 @@ function! s:split(dict)
   \ 'down':  ['botright', 'resize', &lines],
   \ 'left':  ['vertical topleft', 'vertical resize', &columns],
   \ 'right': ['vertical botright', 'vertical resize', &columns] }
-  let s:ppos = s:getpos()
+  let ppos = s:getpos()
   try
     for [dir, triple] in items(directions)
       let val = get(a:dict, dir, '')
@@ -311,7 +311,7 @@ function! s:split(dict)
         endif
         execute cmd sz.'new'
         execute resz sz
-        return {}
+        return [ppos, {}]
       endif
     endfor
     if s:present(a:dict, 'window')
@@ -319,36 +319,44 @@ function! s:split(dict)
     else
       execute (tabpagenr()-1).'tabnew'
     endif
-    return { '&l:wfw': &l:wfw, '&l:wfh': &l:wfh }
+    return [ppos, { '&l:wfw': &l:wfw, '&l:wfh': &l:wfh }]
   finally
     setlocal winfixwidth winfixheight
   endtry
 endfunction
 
 function! s:execute_term(dict, command, temps) abort
-  let winopts = s:split(a:dict)
-
-  let fzf = { 'buf': bufnr('%'), 'dict': a:dict, 'temps': a:temps, 'name': 'FZF', 'winopts': winopts }
-  let s:command = a:command
+  let [ppos, winopts] = s:split(a:dict)
+  let fzf = { 'buf': bufnr('%'), 'ppos': ppos, 'dict': a:dict, 'temps': a:temps,
+            \ 'name': 'FZF', 'winopts': winopts, 'command': a:command }
+  function! fzf.switch_back(inplace)
+    if a:inplace && bufnr('') == self.buf
+      " FIXME: Can't re-enter normal mode from terminal mode
+      " execute "normal! \<c-^>"
+      b #
+      " No other listed buffer
+      if bufnr('') == self.buf
+        enew
+      endif
+    endif
+  endfunction
   function! fzf.on_exit(id, code)
-    let pos = s:getpos()
-    let inplace = pos == s:ppos " {'window': 'enew'}
-    if inplace
+    if s:getpos() == self.ppos " {'window': 'enew'}
       for [opt, val] in items(self.winopts)
         execute 'let' opt '=' val
       endfor
+      call self.switch_back(1)
     else
       if bufnr('') == self.buf
         " We use close instead of bd! since Vim does not close the split when
         " there's no other listed buffer (nvim +'set nobuflisted')
         close
       endif
-      if pos.tab == s:ppos.tab
-        wincmd p
-      endif
+      execute 'tabnext' self.ppos.tab
+      execute self.ppos.win.'wincmd w'
     endif
 
-    if !s:exit_handler(a:code, s:command, 1)
+    if !s:exit_handler(a:code, self.command, 1)
       return
     endif
 
@@ -356,14 +364,7 @@ function! s:execute_term(dict, command, temps) abort
     let ret = []
     try
       let ret = s:callback(self.dict, self.temps)
-
-      if inplace && bufnr('') == self.buf
-        execute "normal! \<c-^>"
-        " No other listed buffer
-        if bufnr('') == self.buf
-          bd!
-        endif
-      endif
+      call self.switch_back(s:getpos() == self.ppos)
     finally
       call s:popd(self.dict, ret)
     endtry
