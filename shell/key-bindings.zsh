@@ -50,9 +50,7 @@ bindkey '\ec' fzf-cd-widget
 fzf-history-widget() {
   setopt localoptions noglobsubst pipefail
   local line
-  line=$( tail -10000 ~/.config/history-files/persistent_shell_history |
-    $(__fzfcmd) --tac +s +m -n3..,.. --tiebreak=index --toggle-sort=ctrl-r ${=FZF_CTRL_R_OPTS} --exact -q "${LBUFFER//$/\\$}" |
-    \grep '^ *[0-9]' | _remove_date_from_command_history )
+  line=$(fzf-select-persistent-history-line)
   if [ -n $line ]; then
     LBUFFER="$line"
     RBUFFER=""

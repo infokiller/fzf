@@ -6,7 +6,7 @@ function _remove_date_from_command_history() {
 
 function fzf-select-persistent-history-line() {
   local max_num_history_lines
-  max_num_history_lines=${MAX_NUM_PERSISTENT_HISTORY_SELECTED_LINES:-20000}
+  max_num_history_lines=${MAX_NUM_PERSISTENT_HISTORY_SELECTED_LINES:-30000}
   if [[ $# -gt 0 ]]; then
     initial_query="${LBUFFER//$/\\$}"
   else
