@@ -2,7 +2,6 @@ package fzf
 
 import (
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/junegunn/fzf/src/algo"
@@ -41,6 +40,7 @@ type termSet []term
 // Pattern represents search pattern
 type Pattern struct {
 	fuzzy         bool
+	fuzzyAlgo     algo.Algo
 	extended      bool
 	caseSensitive bool
 	forward       bool
@@ -49,7 +49,7 @@ type Pattern struct {
 	cacheable     bool
 	delimiter     Delimiter
 	nth           []Range
-	procFun       map[termType]func(bool, bool, []rune, []rune) algo.Result
+	procFun       map[termType]algo.Algo
 }
 
 var (
@@ -75,8 +75,8 @@ func clearChunkCache() {
 }
 
 // BuildPattern builds Pattern object from the given arguments
-func BuildPattern(fuzzy bool, extended bool, caseMode Case, forward bool,
-	nth []Range, delimiter Delimiter, runes []rune) *Pattern {
+func BuildPattern(fuzzy bool, fuzzyAlgo algo.Algo, extended bool, caseMode Case, forward bool,
+	cacheable bool, nth []Range, delimiter Delimiter, runes []rune) *Pattern {
 
 	var asString string
 	if extended {
@@ -90,7 +90,7 @@ func BuildPattern(fuzzy bool, extended bool, caseMode Case, forward bool,
 		return cached
 	}
 
-	caseSensitive, cacheable := true, true
+	caseSensitive := true
 	termSets := []termSet{}
 
 	if extended {
@@ -100,7 +100,7 @@ func BuildPattern(fuzzy bool, extended bool, caseMode Case, forward bool,
 			for idx, term := range termSet {
 				// If the query contains inverse search terms or OR operators,
 				// we cannot cache the search scope
-				if idx > 0 || term.inv {
+				if !cacheable || idx > 0 || term.inv {
 					cacheable = false
 					break Loop
 				}
@@ -117,6 +117,7 @@ func BuildPattern(fuzzy bool, extended bool, caseMode Case, forward bool,
 
 	ptr := &Pattern{
 		fuzzy:         fuzzy,
+		fuzzyAlgo:     fuzzyAlgo,
 		extended:      extended,
 		caseSensitive: caseSensitive,
 		forward:       forward,
@@ -125,9 +126,9 @@ func BuildPattern(fuzzy bool, extended bool, caseMode Case, forward bool,
 		cacheable:     cacheable,
 		nth:           nth,
 		delimiter:     delimiter,
-		procFun:       make(map[termType]func(bool, bool, []rune, []rune) algo.Result)}
+		procFun:       make(map[termType]algo.Algo)}
 
-	ptr.procFun[termFuzzy] = algo.FuzzyMatch
+	ptr.procFun[termFuzzy] = fuzzyAlgo
 	ptr.procFun[termEqual] = algo.EqualMatch
 	ptr.procFun[termExact] = algo.ExactMatchNaive
 	ptr.procFun[termPrefix] = algo.PrefixMatch
@@ -162,12 +163,13 @@ func parseTerms(fuzzy bool, caseMode Case, str string) []termSet {
 
 		if strings.HasPrefix(text, "!") {
 			inv = true
+			typ = termExact
 			text = text[1:]
 		}
 
 		if strings.HasPrefix(text, "'") {
 			// Flip exactness
-			if fuzzy {
+			if fuzzy && !inv {
 				typ = termExact
 				text = text[1:]
 			} else {
@@ -235,9 +237,7 @@ func (p *Pattern) CacheKey() string {
 }
 
 // Match returns the list of matches Items in the given Chunk
-func (p *Pattern) Match(chunk *Chunk) []*Item {
-	space := chunk
-
+func (p *Pattern) Match(chunk *Chunk, slab *util.Slab) []*Result {
 	// ChunkCache: Exact match
 	cacheKey := p.CacheKey()
 	if p.cacheable {
@@ -246,7 +246,8 @@ func (p *Pattern) Match(chunk *Chunk) []*Item {
 		}
 	}
 
-	// ChunkCache: Prefix/suffix match
+	// Prefix/suffix cache
+	var space []*Result
 Loop:
 	for idx := 1; idx < len(cacheKey); idx++ {
 		// [---------| ] | [ |---------]
@@ -256,14 +257,13 @@ Loop:
 		suffix := cacheKey[idx:]
 		for _, substr := range [2]*string{&prefix, &suffix} {
 			if cached, found := _cache.Find(chunk, *substr); found {
-				cachedChunk := Chunk(cached)
-				space = &cachedChunk
+				space = cached
 				break Loop
 			}
 		}
 	}
 
-	matches := p.matchChunk(space)
+	matches := p.matchChunk(chunk, space, slab)
 
 	if p.cacheable {
 		_cache.Add(chunk, cacheKey, matches)
@@ -271,20 +271,19 @@ Loop:
 	return matches
 }
 
-func (p *Pattern) matchChunk(chunk *Chunk) []*Item {
-	matches := []*Item{}
-	if !p.extended {
+func (p *Pattern) matchChunk(chunk *Chunk, space []*Result, slab *util.Slab) []*Result {
+	matches := []*Result{}
+
+	if space == nil {
 		for _, item := range *chunk {
-			offset, bonus := p.basicMatch(item)
-			if sidx := offset[0]; sidx >= 0 {
-				matches = append(matches,
-					dupItem(item, []Offset{offset}, bonus))
+			if match, _, _ := p.MatchItem(item, false, slab); match != nil {
+				matches = append(matches, match)
 			}
 		}
 	} else {
-		for _, item := range *chunk {
-			if offsets, bonus := p.extendedMatch(item); len(offsets) == len(p.termSets) {
-				matches = append(matches, dupItem(item, offsets, bonus))
+		for _, result := range space {
+			if match, _, _ := p.MatchItem(result.item, false, slab); match != nil {
+				matches = append(matches, match)
 			}
 		}
 	}
@@ -292,63 +291,75 @@ func (p *Pattern) matchChunk(chunk *Chunk) []*Item {
 }
 
 // MatchItem returns true if the Item is a match
-func (p *Pattern) MatchItem(item *Item) bool {
-	if !p.extended {
-		offset, _ := p.basicMatch(item)
-		sidx := offset[0]
-		return sidx >= 0
+func (p *Pattern) MatchItem(item *Item, withPos bool, slab *util.Slab) (*Result, []Offset, *[]int) {
+	if p.extended {
+		if offsets, bonus, trimLen, pos := p.extendedMatch(item, withPos, slab); len(offsets) == len(p.termSets) {
+			return buildResult(item, offsets, bonus, trimLen), offsets, pos
+		}
+		return nil, nil, nil
 	}
-	offsets, _ := p.extendedMatch(item)
-	return len(offsets) == len(p.termSets)
+	offset, bonus, trimLen, pos := p.basicMatch(item, withPos, slab)
+	if sidx := offset[0]; sidx >= 0 {
+		offsets := []Offset{offset}
+		return buildResult(item, offsets, bonus, trimLen), offsets, pos
+	}
+	return nil, nil, nil
 }
 
-func dupItem(item *Item, offsets []Offset, bonus int32) *Item {
-	sort.Sort(ByOrder(offsets))
-	return &Item{
-		text:        item.text,
-		origText:    item.origText,
-		transformed: item.transformed,
-		offsets:     offsets,
-		bonus:       bonus,
-		colors:      item.colors,
-		rank:        buildEmptyRank(item.Index())}
-}
-
-func (p *Pattern) basicMatch(item *Item) (Offset, int32) {
+func (p *Pattern) basicMatch(item *Item, withPos bool, slab *util.Slab) (Offset, int, int, *[]int) {
 	input := p.prepareInput(item)
 	if p.fuzzy {
-		return p.iter(algo.FuzzyMatch, input, p.caseSensitive, p.forward, p.text)
+		return p.iter(p.fuzzyAlgo, input, p.caseSensitive, p.forward, p.text, withPos, slab)
 	}
-	return p.iter(algo.ExactMatchNaive, input, p.caseSensitive, p.forward, p.text)
+	return p.iter(algo.ExactMatchNaive, input, p.caseSensitive, p.forward, p.text, withPos, slab)
 }
 
-func (p *Pattern) extendedMatch(item *Item) ([]Offset, int32) {
+func (p *Pattern) extendedMatch(item *Item, withPos bool, slab *util.Slab) ([]Offset, int, int, *[]int) {
 	input := p.prepareInput(item)
 	offsets := []Offset{}
-	var totalBonus int32
+	var totalScore int
+	var totalTrimLen int
+	var allPos *[]int
+	if withPos {
+		allPos = &[]int{}
+	}
 	for _, termSet := range p.termSets {
-		var offset *Offset
-		var bonus int32
+		var offset Offset
+		var currentScore int
+		var trimLen int
+		matched := false
 		for _, term := range termSet {
 			pfun := p.procFun[term.typ]
-			off, pen := p.iter(pfun, input, term.caseSensitive, p.forward, term.text)
+			off, score, tLen, pos := p.iter(pfun, input, term.caseSensitive, p.forward, term.text, withPos, slab)
 			if sidx := off[0]; sidx >= 0 {
 				if term.inv {
 					continue
 				}
-				offset, bonus = &off, pen
+				offset, currentScore, trimLen = off, score, tLen
+				matched = true
+				if withPos {
+					if pos != nil {
+						*allPos = append(*allPos, *pos...)
+					} else {
+						for idx := off[0]; idx < off[1]; idx++ {
+							*allPos = append(*allPos, int(idx))
+						}
+					}
+				}
 				break
 			} else if term.inv {
-				offset, bonus = &Offset{0, 0, 0}, 0
+				offset, currentScore, trimLen = Offset{0, 0}, 0, 0
+				matched = true
 				continue
 			}
 		}
-		if offset != nil {
-			offsets = append(offsets, *offset)
-			totalBonus += bonus
+		if matched {
+			offsets = append(offsets, offset)
+			totalScore += currentScore
+			totalTrimLen += trimLen
 		}
 	}
-	return offsets, totalBonus
+	return offsets, totalScore, totalTrimLen, allPos
 }
 
 func (p *Pattern) prepareInput(item *Item) []Token {
@@ -357,26 +368,28 @@ func (p *Pattern) prepareInput(item *Item) []Token {
 	}
 
 	var ret []Token
-	if len(p.nth) > 0 {
+	if len(p.nth) == 0 {
+		ret = []Token{Token{text: &item.text, prefixLength: 0, trimLength: int32(item.text.TrimLength())}}
+	} else {
 		tokens := Tokenize(item.text, p.delimiter)
 		ret = Transform(tokens, p.nth)
-	} else {
-		ret = []Token{Token{text: item.text, prefixLength: 0, trimLength: util.TrimLen(item.text)}}
 	}
 	item.transformed = ret
 	return ret
 }
 
-func (p *Pattern) iter(pfun func(bool, bool, []rune, []rune) algo.Result,
-	tokens []Token, caseSensitive bool, forward bool, pattern []rune) (Offset, int32) {
+func (p *Pattern) iter(pfun algo.Algo, tokens []Token, caseSensitive bool, forward bool, pattern []rune, withPos bool, slab *util.Slab) (Offset, int, int, *[]int) {
 	for _, part := range tokens {
-		prefixLength := int32(part.prefixLength)
-		if res := pfun(caseSensitive, forward, part.text, pattern); res.Start >= 0 {
-			var sidx int32 = res.Start + prefixLength
-			var eidx int32 = res.End + prefixLength
-			return Offset{sidx, eidx, int32(part.trimLength)}, res.Bonus
+		if res, pos := pfun(caseSensitive, forward, *part.text, pattern, withPos, slab); res.Start >= 0 {
+			sidx := int32(res.Start) + part.prefixLength
+			eidx := int32(res.End) + part.prefixLength
+			if pos != nil {
+				for idx := range *pos {
+					(*pos)[idx] += int(part.prefixLength)
+				}
+			}
+			return Offset{sidx, eidx}, res.Score, int(part.trimLength), pos
 		}
 	}
-	// TODO: math.MaxUint16
-	return Offset{-1, -1, -1}, 0.0
+	return Offset{-1, -1}, 0, -1, nil
 }

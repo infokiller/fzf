@@ -1,6 +1,66 @@
 CHANGELOG
 =========
 
+0.15.4
+------
+- Added support for range expression in preview and execute action
+    - e.g. `ls -l | fzf --preview="echo user={3} when={-4..-2}; cat {-1}" --header-lines=1`
+    - `{q}` will be replaced to the single-quoted string of the current query
+- Fixed to properly handle unicode whitespace characters
+- Display scroll indicator in preview window
+- Inverse search term will use exact matcher by default
+    - This is a breaking change, but I believe it makes much more sense. It is
+      almost impossible to predict which entries will be filtered out due to
+      a fuzzy inverse term. You can still perform inverse-fuzzy-match by
+      prepending `!'` to the term.
+
+0.15.3
+------
+- Added support for more ANSI attributes: dim, underline, blink, and reverse
+- Fixed race condition in `toggle-preview`
+
+0.15.2
+------
+- Preview window is now scrollable
+    - With mouse scroll or with bindable actions
+        - `preview-up`
+        - `preview-down`
+        - `preview-page-up`
+        - `preview-page-down`
+- Updated ANSI processor to support high intensity colors and ignore
+  some VT100-related escape sequences
+
+0.15.1
+------
+- Fixed panic when the pattern occurs after 2^15-th column
+- Fixed rendering delay when displaying extremely long lines
+
+0.15.0
+------
+- Improved fuzzy search algorithm
+    - Added `--algo=[v1|v2]` option so one can still choose the old algorithm
+      which values the search performance over the quality of the result
+- Advanced scoring criteria
+- `--read0` to read input delimited by ASCII NUL character
+- `--print0` to print output delimited by ASCII NUL character
+
+0.13.5
+------
+- Memory and performance optimization
+    - Up to 2x performance with half the amount of memory
+
+0.13.4
+------
+- Performance optimization
+    - Memory footprint for ascii string is reduced by 60%
+    - 15 to 20% improvement of query performance
+    - Up to 45% better performance of `--nth` with non-regex delimiters
+- Fixed invalid handling of `hidden` property of `--preview-window`
+
+0.13.3
+------
+- Fixed duplicate rendering of the last line in preview window
+
 0.13.2
 ------
 - Fixed race condition where preview window is not properly cleared

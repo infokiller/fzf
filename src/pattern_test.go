@@ -5,7 +5,14 @@ import (
 	"testing"
 
 	"github.com/junegunn/fzf/src/algo"
+	"github.com/junegunn/fzf/src/util"
 )
+
+var slab *util.Slab
+
+func init() {
+	slab = util.MakeSlab(slab16Size, slab32Size)
+}
 
 func TestParseTermsExtended(t *testing.T) {
 	terms := parseTerms(true, CaseSmart,
@@ -15,15 +22,15 @@ func TestParseTermsExtended(t *testing.T) {
 		terms[1][0].typ != termExact || terms[1][0].inv ||
 		terms[2][0].typ != termPrefix || terms[2][0].inv ||
 		terms[3][0].typ != termSuffix || terms[3][0].inv ||
-		terms[4][0].typ != termFuzzy || !terms[4][0].inv ||
-		terms[5][0].typ != termExact || !terms[5][0].inv ||
+		terms[4][0].typ != termExact || !terms[4][0].inv ||
+		terms[5][0].typ != termFuzzy || !terms[5][0].inv ||
 		terms[6][0].typ != termPrefix || !terms[6][0].inv ||
 		terms[7][0].typ != termSuffix || !terms[7][0].inv ||
 		terms[7][1].typ != termEqual || terms[7][1].inv ||
 		terms[8][0].typ != termPrefix || terms[8][0].inv ||
 		terms[8][1].typ != termExact || terms[8][1].inv ||
 		terms[8][2].typ != termSuffix || terms[8][2].inv ||
-		terms[8][3].typ != termFuzzy || !terms[8][3].inv {
+		terms[8][3].typ != termExact || !terms[8][3].inv {
 		t.Errorf("%s", terms)
 	}
 	for idx, termSet := range terms[:8] {
@@ -68,25 +75,31 @@ func TestParseTermsEmpty(t *testing.T) {
 func TestExact(t *testing.T) {
 	defer clearPatternCache()
 	clearPatternCache()
-	pattern := BuildPattern(true, true, CaseSmart, true,
+	pattern := BuildPattern(true, algo.FuzzyMatchV2, true, CaseSmart, true, true,
 		[]Range{}, Delimiter{}, []rune("'abc"))
-	res := algo.ExactMatchNaive(
-		pattern.caseSensitive, pattern.forward, []rune("aabbcc abc"), pattern.termSets[0][0].text)
+	res, pos := algo.ExactMatchNaive(
+		pattern.caseSensitive, pattern.forward, util.RunesToChars([]rune("aabbcc abc")), pattern.termSets[0][0].text, true, nil)
 	if res.Start != 7 || res.End != 10 {
 		t.Errorf("%s / %d / %d", pattern.termSets, res.Start, res.End)
+	}
+	if pos != nil {
+		t.Errorf("pos is expected to be nil")
 	}
 }
 
 func TestEqual(t *testing.T) {
 	defer clearPatternCache()
 	clearPatternCache()
-	pattern := BuildPattern(true, true, CaseSmart, true, []Range{}, Delimiter{}, []rune("^AbC$"))
+	pattern := BuildPattern(true, algo.FuzzyMatchV2, true, CaseSmart, true, true, []Range{}, Delimiter{}, []rune("^AbC$"))
 
-	match := func(str string, sidxExpected int32, eidxExpected int32) {
-		res := algo.EqualMatch(
-			pattern.caseSensitive, pattern.forward, []rune(str), pattern.termSets[0][0].text)
+	match := func(str string, sidxExpected int, eidxExpected int) {
+		res, pos := algo.EqualMatch(
+			pattern.caseSensitive, pattern.forward, util.RunesToChars([]rune(str)), pattern.termSets[0][0].text, true, nil)
 		if res.Start != sidxExpected || res.End != eidxExpected {
 			t.Errorf("%s / %d / %d", pattern.termSets, res.Start, res.End)
+		}
+		if pos != nil {
+			t.Errorf("pos is expected to be nil")
 		}
 	}
 	match("ABC", -1, -1)
@@ -96,17 +109,17 @@ func TestEqual(t *testing.T) {
 func TestCaseSensitivity(t *testing.T) {
 	defer clearPatternCache()
 	clearPatternCache()
-	pat1 := BuildPattern(true, false, CaseSmart, true, []Range{}, Delimiter{}, []rune("abc"))
+	pat1 := BuildPattern(true, algo.FuzzyMatchV2, false, CaseSmart, true, true, []Range{}, Delimiter{}, []rune("abc"))
 	clearPatternCache()
-	pat2 := BuildPattern(true, false, CaseSmart, true, []Range{}, Delimiter{}, []rune("Abc"))
+	pat2 := BuildPattern(true, algo.FuzzyMatchV2, false, CaseSmart, true, true, []Range{}, Delimiter{}, []rune("Abc"))
 	clearPatternCache()
-	pat3 := BuildPattern(true, false, CaseIgnore, true, []Range{}, Delimiter{}, []rune("abc"))
+	pat3 := BuildPattern(true, algo.FuzzyMatchV2, false, CaseIgnore, true, true, []Range{}, Delimiter{}, []rune("abc"))
 	clearPatternCache()
-	pat4 := BuildPattern(true, false, CaseIgnore, true, []Range{}, Delimiter{}, []rune("Abc"))
+	pat4 := BuildPattern(true, algo.FuzzyMatchV2, false, CaseIgnore, true, true, []Range{}, Delimiter{}, []rune("Abc"))
 	clearPatternCache()
-	pat5 := BuildPattern(true, false, CaseRespect, true, []Range{}, Delimiter{}, []rune("abc"))
+	pat5 := BuildPattern(true, algo.FuzzyMatchV2, false, CaseRespect, true, true, []Range{}, Delimiter{}, []rune("abc"))
 	clearPatternCache()
-	pat6 := BuildPattern(true, false, CaseRespect, true, []Range{}, Delimiter{}, []rune("Abc"))
+	pat6 := BuildPattern(true, algo.FuzzyMatchV2, false, CaseRespect, true, true, []Range{}, Delimiter{}, []rune("Abc"))
 
 	if string(pat1.text) != "abc" || pat1.caseSensitive != false ||
 		string(pat2.text) != "Abc" || pat2.caseSensitive != true ||
@@ -119,31 +132,42 @@ func TestCaseSensitivity(t *testing.T) {
 }
 
 func TestOrigTextAndTransformed(t *testing.T) {
-	pattern := BuildPattern(true, true, CaseSmart, true, []Range{}, Delimiter{}, []rune("jg"))
-	tokens := Tokenize([]rune("junegunn"), Delimiter{})
+	pattern := BuildPattern(true, algo.FuzzyMatchV2, true, CaseSmart, true, true, []Range{}, Delimiter{}, []rune("jg"))
+	tokens := Tokenize(util.RunesToChars([]rune("junegunn")), Delimiter{})
 	trans := Transform(tokens, []Range{Range{1, 1}})
 
-	origRunes := []rune("junegunn.choi")
+	origBytes := []byte("junegunn.choi")
 	for _, extended := range []bool{false, true} {
 		chunk := Chunk{
 			&Item{
-				text:        []rune("junegunn"),
-				origText:    &origRunes,
+				text:        util.RunesToChars([]rune("junegunn")),
+				origText:    &origBytes,
 				transformed: trans},
 		}
 		pattern.extended = extended
-		matches := pattern.matchChunk(&chunk)
-		if string(matches[0].text) != "junegunn" || string(*matches[0].origText) != "junegunn.choi" ||
-			matches[0].offsets[0][0] != 0 || matches[0].offsets[0][1] != 5 ||
-			!reflect.DeepEqual(matches[0].transformed, trans) {
+		matches := pattern.matchChunk(&chunk, nil, slab) // No cache
+		if !(matches[0].item.text.ToString() == "junegunn" &&
+			string(*matches[0].item.origText) == "junegunn.choi" &&
+			reflect.DeepEqual(matches[0].item.transformed, trans)) {
 			t.Error("Invalid match result", matches)
+		}
+
+		match, offsets, pos := pattern.MatchItem(chunk[0], true, slab)
+		if !(match.item.text.ToString() == "junegunn" &&
+			string(*match.item.origText) == "junegunn.choi" &&
+			offsets[0][0] == 0 && offsets[0][1] == 5 &&
+			reflect.DeepEqual(match.item.transformed, trans)) {
+			t.Error("Invalid match result", match, offsets, extended)
+		}
+		if !((*pos)[0] == 4 && (*pos)[1] == 0) {
+			t.Error("Invalid pos array", *pos)
 		}
 	}
 }
 
 func TestCacheKey(t *testing.T) {
 	test := func(extended bool, patStr string, expected string, cacheable bool) {
-		pat := BuildPattern(true, extended, CaseSmart, true, []Range{}, Delimiter{}, []rune(patStr))
+		pat := BuildPattern(true, algo.FuzzyMatchV2, extended, CaseSmart, true, true, []Range{}, Delimiter{}, []rune(patStr))
 		if pat.CacheKey() != expected {
 			t.Errorf("Expected: %s, actual: %s", expected, pat.CacheKey())
 		}

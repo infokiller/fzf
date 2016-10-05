@@ -29,7 +29,7 @@ __fzf_select_tmux__() {
     height="-l $height"
   fi
 
-  tmux split-window $height "cd $(printf %q "$PWD"); FZF_DEFAULT_OPTS=$(printf %q "$FZF_DEFAULT_OPTS") PATH=$(printf %q "$PATH") FZF_CTRL_T_COMMAND=$(printf %q "$FZF_CTRL_T_COMMAND") FZF_CTRL_T_OPTS=$(printf %q "$FZF_CTRL_T_OPTS") bash -c 'source \"${BASH_SOURCE[0]}\"; tmux send-keys -t $TMUX_PANE \"\$(__fzf_select__)\"'"
+  tmux split-window $height "cd $(printf %q "$PWD"); FZF_DEFAULT_OPTS=$(printf %q "$FZF_DEFAULT_OPTS") PATH=$(printf %q "$PATH") FZF_CTRL_T_COMMAND=$(printf %q "$FZF_CTRL_T_COMMAND") FZF_CTRL_T_OPTS=$(printf %q "$FZF_CTRL_T_OPTS") bash -c 'source \"${BASH_SOURCE[0]}\"; RESULT=\"\$(__fzf_select__)\"; tmux setb -b fzf \"\$RESULT\" \\; pasteb -b fzf -t $TMUX_PANE \\; deleteb -b fzf || tmux send-keys -t $TMUX_PANE \"\$RESULT\"'"
 }
 
 fzf-file-widget() {
@@ -57,7 +57,7 @@ __fzf_history__() {
   shopt -u nocaseglob nocasematch
   line=$(
     tail -10000 ~/.config/history-files/persistent_shell_history |
-    $(__fzfcmd) +s --tac +m -n3..,.. --tiebreak=index --toggle-sort=ctrl-r --exact $FZF_CTRL_R_OPTS |
+    eval "$(__fzfcmd) +s --tac +m -n3..,.. --tiebreak=index --toggle-sort=ctrl-r --exact $FZF_CTRL_R_OPTS" |
     \grep '^ *[0-9]' | remove_date_from_command_history) &&
     if [[ $- =~ H ]]; then
       sed 's/^ *\([0-9]*\)\** .*/!\1/' <<< "$line"

@@ -10,18 +10,15 @@ Pros
 
 - No dependencies
 - Blazingly fast
-    - e.g. `locate / | fzf`
-- Flexible layout
-    - Runs in fullscreen or in horizontal/vertical split using tmux
 - The most comprehensive feature set
-    - Try `fzf --help` and be surprised
+- Flexible layout using tmux panes
 - Batteries included
     - Vim/Neovim plugin, key bindings and fuzzy auto-completion
 
 Installation
 ------------
 
-fzf project consists of the following:
+fzf project consists of the following components:
 
 - `fzf` executable
 - `fzf-tmux` script for launching fzf in a tmux pane
@@ -30,12 +27,12 @@ fzf project consists of the following:
     - Fuzzy auto-completion (bash, zsh)
 - Vim/Neovim plugin
 
-You can [download fzf executable][bin] alone, but it's recommended that you
-install the extra stuff using the attached install script.
+You can [download fzf executable][bin] alone if you don't need the extra
+stuff.
 
 [bin]: https://github.com/junegunn/fzf-bin/releases
 
-#### Using git (recommended)
+### Using git
 
 Clone this repository and run
 [install](https://github.com/junegunn/fzf/blob/master/install) script.
@@ -45,7 +42,7 @@ git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
 ~/.fzf/install
 ```
 
-#### Using Homebrew
+### Using Homebrew
 
 On OS X, you can use [Homebrew](http://brew.sh/) to install fzf.
 
@@ -56,26 +53,30 @@ brew install fzf
 /usr/local/opt/fzf/install
 ```
 
-#### Install as Vim plugin
+### Vim plugin
 
-Once you have cloned the repository, add the following line to your .vimrc.
+You can manually add the directory to `&runtimepath` as follows,
 
 ```vim
+" If installed using git
 set rtp+=~/.fzf
+
+" If installed using Homebrew
+set rtp+=/usr/local/opt/fzf
 ```
 
-Or you can have [vim-plug](https://github.com/junegunn/vim-plug) manage fzf
-(recommended):
+But it's recommended that you use a plugin manager like
+[vim-plug](https://github.com/junegunn/vim-plug).
 
 ```vim
 Plug 'junegunn/fzf', { 'dir': '~/.fzf', 'do': './install --all' }
 ```
 
-#### Upgrading fzf
+### Upgrading fzf
 
 fzf is being actively developed and you might want to upgrade it once in a
 while. Please follow the instruction below depending on the installation
-method.
+method used.
 
 - git: `cd ~/.fzf && git pull && ./install`
 - brew: `brew update; brew reinstall fzf`
@@ -112,16 +113,16 @@ vim $(fzf)
 
 Unless otherwise specified, fzf starts in "extended-search mode" where you can
 type in multiple search terms delimited by spaces. e.g. `^music .mp3$ sbtrkt
-!rmx`
+!fire`
 
-| Token    | Match type           | Description                      |
-| -------- | -------------------- | -------------------------------- |
-| `sbtrkt` | fuzzy-match          | Items that match `sbtrkt`        |
-| `^music` | prefix-exact-match   | Items that start with `music`    |
-| `.mp3$`  | suffix-exact-match   | Items that end with `.mp3`       |
-| `'wild`  | exact-match (quoted) | Items that include `wild`        |
-| `!rmx`   | inverse-fuzzy-match  | Items that do not match `rmx`    |
-| `!'fire` | inverse-exact-match  | Items that do not include `fire` |
+| Token    | Match type                 | Description                       |
+| -------- | -------------------------- | --------------------------------- |
+| `sbtrkt` | fuzzy-match                | Items that match `sbtrkt`         |
+| `^music` | prefix-exact-match         | Items that start with `music`     |
+| `.mp3$`  | suffix-exact-match         | Items that end with `.mp3`        |
+| `'wild`  | exact-match (quoted)       | Items that include `wild`         |
+| `!fire`  | inverse-exact-match        | Items that do not include `fire`  |
+| `!.mp3$` | inverse-suffix-exact-match | Items that do not end with `.mp3` |
 
 If you don't prefer fuzzy matching and do not wish to "quote" every word,
 start fzf with `-e` or `--exact` option. Note that when  `--exact` is set,
@@ -304,7 +305,7 @@ If you have set up fzf for Vim, `:FZF` command will be added.
 :FZF ~
 
 " With options
-:FZF --no-sort -m /tmp
+:FZF --no-sort --reverse --inline-info /tmp
 
 " Bang version starts in fullscreen instead of using tmux pane or Neovim split
 :FZF!
@@ -320,10 +321,10 @@ customization.
 
 [fzf-config]: https://github.com/junegunn/fzf/wiki/Configuring-FZF-command-(vim)
 
-#### `fzf#run([options])`
+#### `fzf#run`
 
-For more advanced uses, you can use `fzf#run()` function with the following
-options.
+For more advanced uses, you can use `fzf#run([options])` function with the
+following options.
 
 | Option name                | Type          | Description                                                      |
 | -------------------------- | ------------- | ---------------------------------------------------------------- |
@@ -341,6 +342,17 @@ options.
 
 Examples can be found on [the wiki
 page](https://github.com/junegunn/fzf/wiki/Examples-(vim)).
+
+#### `fzf#wrap`
+
+`fzf#wrap([name string,] [opts dict,] [fullscreen boolean])` is a helper
+function that decorates the options dictionary so that it understands
+`g:fzf_layout`, `g:fzf_action`, and `g:fzf_history_dir` like `:FZF`.
+
+```vim
+command! -bang MyStuff
+  \ call fzf#run(fzf#wrap('my-stuff', {'dir': '~/my-stuff'}, <bang>0))
+```
 
 Tips
 ----
@@ -377,6 +389,12 @@ fzf
 
 # To apply the command to CTRL-T as well
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+```
+
+If you don't want to exclude hidden files, use the following command:
+
+```sh
+export FZF_DEFAULT_COMMAND='ag --hidden --ignore .git -g ""'
 ```
 
 #### `git ls-tree` for fast traversal

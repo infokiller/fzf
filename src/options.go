@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/junegunn/fzf/src/algo"
 	"github.com/junegunn/fzf/src/curses"
 
 	"github.com/junegunn/go-shellwords"
@@ -19,6 +20,7 @@ const usage = `usage: fzf [options]
     -x, --extended        Extended-search mode
                           (enabled by default; +x or --no-extended to disable)
     -e, --exact           Enable Exact-match
+    --algo=TYPE           Fuzzy matching algorithm: [v1|v2] (default: v2)
     -i                    Case-insensitive match (default: smart-case match)
     +i                    Case-sensitive match
     -n, --nth=N[,..]      Comma-separated list of field index expressions
@@ -94,7 +96,7 @@ const (
 type criterion int
 
 const (
-	byMatchLen criterion = iota
+	byScore criterion = iota
 	byLength
 	byBegin
 	byEnd
@@ -128,6 +130,7 @@ type previewOpts struct {
 // Options stores the values of command-line options
 type Options struct {
 	Fuzzy       bool
+	FuzzyAlgo   algo.Algo
 	Extended    bool
 	Case        Case
 	Nth         []Range
@@ -159,6 +162,7 @@ type Options struct {
 	Preview     previewOpts
 	PrintQuery  bool
 	ReadZero    bool
+	Printer     func(string)
 	Sync        bool
 	History     *History
 	Header      []string
@@ -171,6 +175,7 @@ type Options struct {
 func defaultOptions() *Options {
 	return &Options{
 		Fuzzy:       true,
+		FuzzyAlgo:   algo.FuzzyMatchV2,
 		Extended:    true,
 		Case:        CaseSmart,
 		Nth:         make([]Range, 0),
@@ -178,7 +183,7 @@ func defaultOptions() *Options {
 		Delimiter:   Delimiter{},
 		Sort:        1000,
 		Tac:         false,
-		Criteria:    []criterion{byMatchLen, byLength},
+		Criteria:    []criterion{byScore, byLength},
 		Multi:       false,
 		Ansi:        false,
 		Mouse:       true,
@@ -202,6 +207,7 @@ func defaultOptions() *Options {
 		Preview:     previewOpts{"", posRight, sizeSpec{50, true}, false},
 		PrintQuery:  false,
 		ReadZero:    false,
+		Printer:     func(str string) { fmt.Println(str) },
 		Sync:        false,
 		History:     nil,
 		Header:      make([]string, 0),
@@ -321,6 +327,18 @@ func isAlphabet(char uint8) bool {
 	return char >= 'a' && char <= 'z'
 }
 
+func parseAlgo(str string) algo.Algo {
+	switch str {
+	case "v1":
+		return algo.FuzzyMatchV1
+	case "v2":
+		return algo.FuzzyMatchV2
+	default:
+		errorExit("invalid algorithm (expected: v1 or v2)")
+	}
+	return algo.FuzzyMatchV2
+}
+
 func parseKeyChords(str string, message string) map[int]string {
 	if len(str) == 0 {
 		errorExit(message)
@@ -406,7 +424,7 @@ func parseKeyChords(str string, message string) map[int]string {
 }
 
 func parseTiebreak(str string) []criterion {
-	criteria := []criterion{byMatchLen}
+	criteria := []criterion{byScore}
 	hasIndex := false
 	hasLength := false
 	hasBegin := false
@@ -645,6 +663,14 @@ func parseKeymap(keymap map[int]actionType, execmap map[int]string, str string) 
 			keymap[key] = actTogglePreview
 		case "toggle-sort":
 			keymap[key] = actToggleSort
+		case "preview-up":
+			keymap[key] = actPreviewUp
+		case "preview-down":
+			keymap[key] = actPreviewDown
+		case "preview-page-up":
+			keymap[key] = actPreviewPageUp
+		case "preview-page-down":
+			keymap[key] = actPreviewPageDown
 		default:
 			if isExecuteAction(actLower) {
 				var offset int
@@ -724,6 +750,7 @@ func parseSize(str string, maxPercent float64, label string) sizeSpec {
 
 func parsePreviewWindow(opts *previewOpts, input string) {
 	layout := input
+	opts.hidden = false
 	if strings.HasSuffix(layout, ":hidden") {
 		opts.hidden = true
 		layout = strings.TrimSuffix(layout, ":hidden")
@@ -832,6 +859,8 @@ func parseOptions(opts *Options, allArgs []string) {
 		case "-f", "--filter":
 			filter := nextString(allArgs, &i, "query string required")
 			opts.Filter = &filter
+		case "--algo":
+			opts.FuzzyAlgo = parseAlgo(nextString(allArgs, &i, "algorithm required (v1|v2)"))
 		case "--expect":
 			opts.Expect = parseKeyChords(nextString(allArgs, &i, "key names required"), "key names required")
 		case "--tiebreak":
@@ -916,6 +945,10 @@ func parseOptions(opts *Options, allArgs []string) {
 			opts.ReadZero = true
 		case "--no-read0":
 			opts.ReadZero = false
+		case "--print0":
+			opts.Printer = func(str string) { fmt.Print(str, "\x00") }
+		case "--no-print0":
+			opts.Printer = func(str string) { fmt.Println(str) }
 		case "--print-query":
 			opts.PrintQuery = true
 		case "--no-print-query":
@@ -960,7 +993,9 @@ func parseOptions(opts *Options, allArgs []string) {
 		case "--version":
 			opts.Version = true
 		default:
-			if match, value := optString(arg, "-q", "--query="); match {
+			if match, value := optString(arg, "--algo="); match {
+				opts.FuzzyAlgo = parseAlgo(value)
+			} else if match, value := optString(arg, "-q", "--query="); match {
 				opts.Query = value
 			} else if match, value := optString(arg, "-f", "--filter="); match {
 				opts.Filter = &value
