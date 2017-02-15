@@ -17,6 +17,7 @@ swap=""
 close=""
 term=""
 [[ -n "$LINES" ]] && lines=$LINES || lines=$(tput lines)
+[[ -n "$COLUMNS" ]] && columns=$COLUMNS || columns=$(tput cols)
 
 help() {
   >&2 echo 'usage: fzf-tmux [-u|-d [HEIGHT[%]]] [-l|-r [WIDTH[%]]] [--] [FZF OPTIONS]
@@ -83,7 +84,7 @@ while [[ $# -gt 0 ]]; do
       else
         if [[ -n "$swap" ]]; then
           if [[ "$arg" =~ ^.l ]]; then
-            [[ -n "$COLUMNS" ]] && max=$COLUMNS || max=$(tput cols)
+            max=$columns
           else
             max=$lines
           fi
@@ -108,10 +109,13 @@ while [[ $# -gt 0 ]]; do
   [[ -n "$skip" ]] && args+=("$arg")
 done
 
-if [[ -z "$TMUX" ]] || [[ "$lines" -le 15 ]]; then
+if [[ -z "$TMUX" || "$opt" =~ ^-h && "$columns" -le 40 || ! "$opt" =~ ^-h && "$lines" -le 15 ]]; then
   "$fzf" "${args[@]}"
   exit $?
 fi
+
+# --height option is not allowed
+args+=("--no-height")
 
 # Handle zoomed tmux pane by moving it to a temp window
 if tmux list-panes -F '#F' | grep -q Z; then
@@ -134,6 +138,7 @@ cleanup() {
 
   # Remove temp window if we were zoomed
   if [[ -n "$zoomed" ]]; then
+    tmux display-message -p "#{window_id}" > /dev/null
     tmux swap-pane -t $original_window \; \
       select-window -t $original_window \; \
       kill-window -t $tmp_window \; \

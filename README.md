@@ -72,7 +72,17 @@ But it's recommended that you use a plugin manager like
 Plug 'junegunn/fzf', { 'dir': '~/.fzf', 'do': './install --all' }
 ```
 
-### Upgrading fzf
+### Windows
+
+Pre-built binaries for Windows can be downloaded [here][bin]. However, other
+components of the project may not work on Windows. You might want to consider
+installing fzf on [Windows Subsystem for Linux][wsl] where everything runs
+flawlessly.
+
+[wsl]: https://blogs.msdn.microsoft.com/wsl/
+
+Upgrading fzf
+-------------
 
 fzf is being actively developed and you might want to upgrade it once in a
 while. Please follow the instruction below depending on the installation
@@ -81,6 +91,11 @@ method used.
 - git: `cd ~/.fzf && git pull && ./install`
 - brew: `brew update; brew reinstall fzf`
 - vim-plug: `:PlugUpdate fzf`
+
+Building fzf
+------------
+
+See [BUILD.md](BUILD.md).
 
 Usage
 -----
@@ -102,12 +117,35 @@ vim $(fzf)
 
 #### Using the finder
 
-- `CTRL-J` / `CTRL-K` (or `CTRL-N` / `CTRL-P)` to move cursor up and down
+- `CTRL-J` / `CTRL-K` (or `CTRL-N` / `CTRL-P`) to move cursor up and down
 - `Enter` key to select the item, `CTRL-C` / `CTRL-G` / `ESC` to exit
 - On multi-select mode (`-m`), `TAB` and `Shift-TAB` to mark multiple items
 - Emacs style key bindings
 - Mouse: scroll, click, double-click; shift-click and shift-scroll on
   multi-select mode
+
+#### Layout
+
+fzf by default starts in fullscreen mode, but you can make it start below the
+cursor with `--height` option.
+
+```sh
+vim $(fzf --height 40%)
+```
+
+Also check out `--reverse` option if you prefer "top-down" layout instead of
+the default "bottom-up" layout.
+
+```sh
+vim $(fzf --height 40% --reverse)
+```
+
+You can add these options to `$FZF_DEFAULT_OPTS` so that they're applied by
+default. For example,
+
+```sh
+export FZF_DEFAULT_OPTS='--height 40% --reverse --border'
+```
 
 #### Search syntax
 
@@ -145,6 +183,10 @@ or `py`.
     - Default options
     - e.g. `export FZF_DEFAULT_OPTS="--reverse --inline-info"`
 
+#### Options
+
+See the man page (`man fzf`) for the full list of options.
+
 Examples
 --------
 
@@ -171,6 +213,13 @@ cat /usr/share/dict/words | fzf-tmux -l 20% --multi --reverse
 It will still work even when you're not on tmux, silently ignoring `-[udlr]`
 options, so you can invariably use `fzf-tmux` in your scripts.
 
+Alternatively, you can use `--height HEIGHT[%]` option not to start fzf in
+fullscreen mode.
+
+```sh
+fzf --height 40%
+```
+
 Key bindings for command line
 -----------------------------
 
@@ -188,13 +237,15 @@ fish.
     - Set `FZF_ALT_C_COMMAND` to override the default command
     - Set `FZF_ALT_C_OPTS` to pass additional options
 
-If you're on a tmux session, fzf will start in a split pane. You may disable
-this tmux integration by setting `FZF_TMUX` to 0, or change the height of the
-pane with `FZF_TMUX_HEIGHT` (e.g. `20`, `50%`).
+If you're on a tmux session, you can start fzf in a split pane by setting
+`FZF_TMUX` to 1, and change the height of the pane with `FZF_TMUX_HEIGHT`
+(e.g. `20`, `50%`).
 
 If you use vi mode on bash, you need to add `set -o vi` *before* `source
 ~/.fzf.bash` in your .bashrc, so that it correctly sets up key bindings for vi
 mode.
+
+More tips can be found on [the wiki page](https://github.com/junegunn/fzf/wiki/Configuring-shell-key-bindings).
 
 Fuzzy completion for bash and zsh
 ---------------------------------
@@ -307,7 +358,7 @@ If you have set up fzf for Vim, `:FZF` command will be added.
 " With options
 :FZF --no-sort --reverse --inline-info /tmp
 
-" Bang version starts in fullscreen instead of using tmux pane or Neovim split
+" Bang version starts fzf in fullscreen mode
 :FZF!
 ```
 
@@ -319,7 +370,7 @@ Note that the environment variables `FZF_DEFAULT_COMMAND` and
 `FZF_DEFAULT_OPTS` also apply here. Refer to [the wiki page][fzf-config] for
 customization.
 
-[fzf-config]: https://github.com/junegunn/fzf/wiki/Configuring-FZF-command-(vim)
+[fzf-config]: https://github.com/junegunn/fzf/wiki/Configuring-Vim-plugin
 
 #### `fzf#run`
 
@@ -347,7 +398,8 @@ page](https://github.com/junegunn/fzf/wiki/Examples-(vim)).
 
 `fzf#wrap([name string,] [opts dict,] [fullscreen boolean])` is a helper
 function that decorates the options dictionary so that it understands
-`g:fzf_layout`, `g:fzf_action`, and `g:fzf_history_dir` like `:FZF`.
+`g:fzf_layout`, `g:fzf_action`, `g:fzf_colors`, and `g:fzf_history_dir` like
+`:FZF`.
 
 ```vim
 command! -bang MyStuff
@@ -356,20 +408,6 @@ command! -bang MyStuff
 
 Tips
 ----
-
-#### Rendering issues
-
-If you have any rendering issues, check the following:
-
-1. Make sure `$TERM` is correctly set. fzf will use 256-color only if it
-   contains `256` (e.g. `xterm-256color`)
-2. If you're on screen or tmux, `$TERM` should be either `screen` or
-   `screen-256color`
-3. Some terminal emulators (e.g. mintty) have problem displaying default
-   background color and make some text unable to read. In that case, try
-   `--black` option. And if it solves your problem, I recommend including it
-   in `FZF_DEFAULT_OPTS` for further convenience.
-4. If you still have problem, try `--no-256` option or even `--no-color`.
 
 #### Respecting `.gitignore`, `.hgignore`, and `svn:ignore`
 
@@ -413,19 +451,41 @@ export FZF_DEFAULT_COMMAND='
 
 It's [a known bug of fish](https://github.com/fish-shell/fish-shell/issues/1362)
 that it doesn't allow reading from STDIN in command substitution, which means
-simple `vim (fzf)` won't work as expected. The workaround is to store the result
-of fzf to a temporary file.
+simple `vim (fzf)` won't work as expected. The workaround is to use the `read`
+fish command:
 
 ```sh
-fzf > $TMPDIR/fzf.result; and vim (cat $TMPDIR/fzf.result)
+fzf | read -l result; and vim $result
 ```
 
-License
--------
+or, for multiple results:
 
-[MIT](LICENSE)
+```sh
+fzf -m | while read -l r; set result $result $r; end; and vim $result
+```
 
-Author
-------
+The globbing system is different in fish and thus `**` completion will not work.
+However, the `CTRL-T` command will use the last token on the commandline as the
+root folder for the recursive search. For instance, hitting `CTRL-T` at the end
+of the following commandline
 
-Junegunn Choi
+```sh
+ls /var/
+```
+
+will list all files and folders under `/var/`.
+
+When using a custom `FZF_CTRL_T_COMMAND`, use the unexpanded `$dir` variable to
+make use of this feature. `$dir` defaults to `.` when the last token is not a
+valid directory. Example:
+
+```sh
+set -l FZF_CTRL_T_COMMAND "command find -L \$dir -type f 2> /dev/null | sed '1d; s#^\./##'"
+```
+
+[License](LICENSE)
+------------------
+
+The MIT License (MIT)
+
+Copyright (c) 2017 Junegunn Choi
