@@ -291,9 +291,9 @@ try
   endtry
 
   if !has_key(dict, 'source') && !empty($FZF_DEFAULT_COMMAND)
-    let temps.source = tempname()
-    call writefile(split($FZF_DEFAULT_COMMAND, "\n"), temps.source)
-    let dict.source = (empty($SHELL) ? &shell : $SHELL) . ' ' . s:shellesc(temps.source)
+    let temps.source = tempname().(s:is_win ? '.bat' : '')
+    call writefile((s:is_win ? ['@echo off'] : []) + split($FZF_DEFAULT_COMMAND, "\n"), temps.source)
+    let dict.source = (empty($SHELL) ? &shell : $SHELL) . (s:is_win ? ' /c ' : ' ') . s:shellesc(temps.source)
   endif
 
   if has_key(dict, 'source')
@@ -445,7 +445,7 @@ function! s:execute(dict, command, use_height, temps) abort
     endif
     let command = printf(fmt, escaped)
   else
-    let command = escaped
+    let command = a:use_height ? a:command : escaped
   endif
   if a:use_height
     let stdin = has_key(a:dict, 'source') ? '' : '< /dev/tty'
