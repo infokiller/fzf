@@ -46,6 +46,7 @@ type itemLine struct {
 	current  bool
 	selected bool
 	label    string
+	queryLen int
 	width    int
 	result   Result
 }
@@ -294,7 +295,14 @@ func NewTerminal(opts *Options, eventBox *util.EventBox) *Terminal {
 		strongAttr = tui.AttrRegular
 	}
 	var renderer tui.Renderer
-	if opts.Height.size > 0 {
+	if opts.Height.size == 0 || opts.Height.percent && opts.Height.size == 100 {
+		if tui.HasFullscreenRenderer() {
+			renderer = tui.NewFullscreenRenderer(opts.Theme, opts.Black, opts.Mouse)
+		} else {
+			renderer = tui.NewLightRenderer(opts.Theme, opts.Black, opts.Mouse, opts.Tabstop, opts.ClearOnExit,
+				true, func(h int) int { return h })
+		}
+	} else {
 		maxHeightFunc := func(termHeight int) int {
 			var maxHeight int
 			if opts.Height.percent {
@@ -315,12 +323,7 @@ func NewTerminal(opts *Options, eventBox *util.EventBox) *Terminal {
 			}
 			return util.Min(termHeight, util.Max(maxHeight, effectiveMinHeight))
 		}
-		renderer = tui.NewLightRenderer(opts.Theme, opts.Black, opts.Mouse, opts.Tabstop, maxHeightFunc)
-	} else if tui.HasFullscreenRenderer() {
-		renderer = tui.NewFullscreenRenderer(opts.Theme, opts.Black, opts.Mouse)
-	} else {
-		renderer = tui.NewLightRenderer(opts.Theme, opts.Black, opts.Mouse, opts.Tabstop,
-			func(h int) int { return h })
+		renderer = tui.NewLightRenderer(opts.Theme, opts.Black, opts.Mouse, opts.Tabstop, opts.ClearOnExit, false, maxHeightFunc)
 	}
 	wordRubout := "[^[:alnum:]][[:alnum:]]"
 	wordNext := "[[:alnum:]][^[:alnum:]]|(.$)"
@@ -599,7 +602,7 @@ func (t *Terminal) resizeWindows() {
 			width,
 			height, tui.BorderNone)
 	}
-	if !t.tui.IsOptimized() && t.theme != nil && t.theme.HasBg() {
+	if !t.tui.IsOptimized() {
 		for i := 0; i < t.window.Height(); i++ {
 			t.window.MoveAndClear(i, 0)
 		}
@@ -657,9 +660,9 @@ func (t *Terminal) printInfo() {
 	output := fmt.Sprintf("%d/%d", t.merger.Length(), t.count)
 	if t.toggleSort {
 		if t.sort {
-			output += "/S"
+			output += " +S"
 		} else {
-			output += "  "
+			output += " -S"
 		}
 	}
 	if t.multi && len(t.selected) > 0 {
@@ -737,11 +740,13 @@ func (t *Terminal) printItem(result *Result, line int, i int, current bool) {
 	}
 
 	// Avoid unnecessary redraw
-	newLine := itemLine{current: current, selected: selected, label: label, result: *result, width: 0}
+	newLine := itemLine{current: current, selected: selected, label: label,
+		result: *result, queryLen: len(t.input), width: 0}
 	prevLine := t.prevLines[i]
 	if prevLine.current == newLine.current &&
 		prevLine.selected == newLine.selected &&
 		prevLine.label == newLine.label &&
+		prevLine.queryLen == newLine.queryLen &&
 		prevLine.result == newLine.result {
 		return
 	}
@@ -955,7 +960,7 @@ func (t *Terminal) printPreview() {
 					trimmed, _ = t.trimRight(trimmed, maxWidth-t.pwindow.X())
 				}
 				str, _ = t.processTabs(trimmed, 0)
-				if ansi != nil && ansi.colored() {
+				if t.theme != nil && ansi != nil && ansi.colored() {
 					fillRet = t.pwindow.CFill(ansi.fg, ansi.bg, ansi.attr, str)
 				} else {
 					fillRet = t.pwindow.Fill(str)

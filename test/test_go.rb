@@ -513,11 +513,11 @@ class TestGoFZF < TestBase
       tmux.send_keys "seq 1 111 | #{fzf "-m +s --tac #{opt} -q11"}", :Enter
       tmux.until { |lines| lines[-3].include? '> 111' }
       tmux.send_keys :Tab
-      tmux.until { |lines| lines[-2].include? '4/111   (1)' }
+      tmux.until { |lines| lines[-2].include? '4/111 -S (1)' }
       tmux.send_keys 'C-R'
       tmux.until { |lines| lines[-3].include? '> 11' }
       tmux.send_keys :Tab
-      tmux.until { |lines| lines[-2].include? '4/111/S (2)' }
+      tmux.until { |lines| lines[-2].include? '4/111 +S (2)' }
       tmux.send_keys :Enter
       assert_equal ['111', '11'], readonce.split($/)
     end
@@ -1296,6 +1296,14 @@ class TestGoFZF < TestBase
     tmux.until { |lines| lines[4] == '> 3' }
     tmux.until { |_|  %w[1 2 3] == File.readlines(tempname).map(&:chomp) }
   end
+
+  def test_no_clear
+    tmux.send_keys 'seq 100 | fzf --no-clear --inline-info --height 5', :Enter
+    prompt = '>   < 100/100'
+    tmux.until { |lines| lines[-1] == prompt }
+    tmux.send_keys :Enter
+    tmux.until { |lines| lines[-2] == prompt && lines[-1] == '1' }
+  end
 end
 
 module TestShell
@@ -1408,6 +1416,7 @@ module TestShell
       tmux.send_keys 'C-r'
       tmux.until { |lines| lines.item_count > 0 }
     end
+    tmux.send_keys 'C-r'
     tmux.send_keys '3d'
     tmux.until { |lines| lines[-3].end_with? 'echo 3rd' }
     tmux.send_keys :Enter

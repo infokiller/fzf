@@ -21,7 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ..
-.TH fzf 1 "Feb 2017" "fzf 0.16.5" "fzf - a command-line fuzzy finder"
+.TH fzf 1 "Mar 2017" "fzf 0.16.6" "fzf - a command-line fuzzy finder"
 
 .SH NAME
 fzf - a command-line fuzzy finder
@@ -339,6 +339,12 @@ Read input delimited by ASCII NUL characters instead of newline characters
 .B "--print0"
 Print output delimited by ASCII NUL characters instead of newline characters
 .TP
+.B "--no-clear"
+Do not clear finder interface on exit. If fzf was started in full screen mode,
+it will not switch back to the original screen, so you'll have to manually run
+\fBtput rmcup\fR to return. This option can be used to avoid flickering of the
+screen when your application needs to start fzf multiple times in order.
+.TP
 .B "--sync"
 Synchronous search for multi-staged filtering. If specified, fzf will launch
 ncurses finder only after the input stream is complete.
@@ -346,6 +352,9 @@ ncurses finder only after the input stream is complete.
 .RS
 e.g. \fBfzf --multi | fzf --sync\fR
 .RE
+.TP
+.B "--version"
+Display version information and exit
 
 .SH ENVIRONMENT VARIABLES
 .TP
