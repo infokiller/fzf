@@ -251,8 +251,9 @@ func (r *LightRenderer) updateTerminalSize() {
 
 func (r *LightRenderer) getch(nonblock bool) (int, bool) {
 	b := make([]byte, 1)
+	fd := r.fd()
 	util.SetNonblock(r.ttyin, nonblock)
-	_, err := r.ttyin.Read(b)
+	_, err := util.Read(fd, b)
 	if err != nil {
 		return 0, false
 	}
@@ -344,9 +345,10 @@ func (r *LightRenderer) escSequence(sz *int) Event {
 		return Event{ESC, 0, nil}
 	}
 	*sz = 2
+	if r.buffer[1] >= 1 && r.buffer[1] <= 'z'-'a'+1 {
+		return Event{int(CtrlAltA + r.buffer[1] - 1), 0, nil}
+	}
 	switch r.buffer[1] {
-	case 13:
-		return Event{AltEnter, 0, nil}
 	case 32:
 		return Event{AltSpace, 0, nil}
 	case 47:
@@ -521,27 +523,35 @@ func (r *LightRenderer) rmcup() {
 	r.csi("?1049l")
 }
 
-func (r *LightRenderer) Pause() {
+func (r *LightRenderer) Pause(clear bool) {
 	terminal.Restore(r.fd(), r.origState)
-	if r.fullscreen {
-		r.rmcup()
-	} else {
-		r.smcup()
-		r.csi("H")
+	if clear {
+		if r.fullscreen {
+			r.rmcup()
+		} else {
+			r.smcup()
+			r.csi("H")
+		}
+		r.flush()
 	}
-	r.flush()
 }
 
-func (r *LightRenderer) Resume() bool {
+func (r *LightRenderer) Resume(clear bool) {
 	terminal.MakeRaw(r.fd())
-	if r.fullscreen {
-		r.smcup()
-	} else {
-		r.rmcup()
+	if clear {
+		if r.fullscreen {
+			r.smcup()
+		} else {
+			r.rmcup()
+		}
+		r.flush()
+	} else if !r.fullscreen && r.mouse {
+		// NOTE: Resume(false) is only called on SIGCONT after SIGSTOP.
+		// And It's highly likely that the offset we obtained at the beginning will
+		// no longer be correct, so we simply disable mouse input.
+		r.csi("?1000l")
+		r.mouse = false
 	}
-	r.flush()
-	// Should redraw
-	return true
 }
 
 func (r *LightRenderer) Clear() {

@@ -75,7 +75,8 @@ const (
 	F11
 	F12
 
-	AltEnter
+	Change
+
 	AltSpace
 	AltSlash
 	AltBS
@@ -90,7 +91,9 @@ const ( // Reset iota
 	AltD
 	AltE
 	AltF
-	AltZ = AltA + 'z' - 'a'
+	AltZ     = AltA + 'z' - 'a'
+	CtrlAltA = AltZ + 1
+	CtrlAltM = CtrlAltA + 'm' - 'a'
 )
 
 const (
@@ -205,8 +208,8 @@ const (
 
 type Renderer interface {
 	Init()
-	Pause()
-	Resume() bool
+	Pause(clear bool)
+	Resume(clear bool)
 	Clear()
 	RefreshWindows(windows []Window)
 	Refresh()

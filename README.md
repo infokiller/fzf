@@ -15,6 +15,39 @@ Pros
 - Batteries included
     - Vim/Neovim plugin, key bindings and fuzzy auto-completion
 
+Table of Contents
+-----------------
+
+   * [Installation](#installation)
+      * [Using git](#using-git)
+      * [Using Homebrew](#using-homebrew)
+      * [As Vim plugin](#as-vim-plugin)
+      * [Windows](#windows)
+   * [Upgrading fzf](#upgrading-fzf)
+   * [Building fzf](#building-fzf)
+   * [Usage](#usage)
+      * [Using the finder](#using-the-finder)
+      * [Layout](#layout)
+      * [Search syntax](#search-syntax)
+      * [Environment variables](#environment-variables)
+      * [Options](#options)
+   * [Examples](#examples)
+   * [fzf-tmux script](#fzf-tmux-script)
+   * [Key bindings for command line](#key-bindings-for-command-line)
+   * [Fuzzy completion for bash and zsh](#fuzzy-completion-for-bash-and-zsh)
+      * [Files and directories](#files-and-directories)
+      * [Process IDs](#process-ids)
+      * [Host names](#host-names)
+      * [Environment variables / Aliases](#environment-variables--aliases)
+      * [Settings](#settings)
+      * [Supported commands](#supported-commands)
+   * [Vim plugin](#vim-plugin)
+   * [Tips](#tips)
+      * [Respecting .gitignore, <code>.hgignore</code>, and <code>svn:ignore</code>](#respecting-gitignore-hgignore-and-svnignore)
+      * [git ls-tree for fast traversal](#git-ls-tree-for-fast-traversal)
+      * [Fish shell](#fish-shell)
+   * [<a href="LICENSE">License</a>](#license)
+
 Installation
 ------------
 
@@ -341,8 +374,8 @@ On bash, fuzzy completion is enabled only for a predefined set of commands
 commands as well like follows.
 
 ```sh
-# There are also _fzf_path_completion and _fzf_dir_completion
-complete -F _fzf_file_completion -o default -o bashdefault doge
+complete -F _fzf_path_completion -o default -o bashdefault ag
+complete -F _fzf_dir_completion -o default -o bashdefault tree
 ```
 
 Vim plugin
@@ -394,9 +427,9 @@ export FZF_DEFAULT_COMMAND='
 #### Fish shell
 
 It's [a known bug of fish](https://github.com/fish-shell/fish-shell/issues/1362)
-that it doesn't allow reading from STDIN in command substitution, which means
-simple `vim (fzf)` won't work as expected. The workaround is to use the `read`
-fish command:
+(will be fixed in 2.6.0) that it doesn't allow reading from STDIN in command
+substitution, which means simple `vim (fzf)` won't work as expected. The
+workaround is to use the `read` fish command:
 
 ```sh
 fzf | read -l result; and vim $result

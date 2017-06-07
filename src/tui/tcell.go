@@ -3,16 +3,16 @@
 package tui
 
 import (
+	"os"
 	"time"
 	"unicode/utf8"
 
 	"runtime"
 
-	// https://github.com/gdamore/tcell/pull/135
-	"github.com/junegunn/tcell"
-	"github.com/junegunn/tcell/encoding"
+	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/encoding"
 
-	"github.com/junegunn/go-runewidth"
+	"github.com/mattn/go-runewidth"
 )
 
 func HasFullscreenRenderer() bool {
@@ -141,6 +141,9 @@ func (r *FullscreenRenderer) initScreen() {
 }
 
 func (r *FullscreenRenderer) Init() {
+	if os.Getenv("TERM") == "cygwin" {
+		os.Setenv("TERM", "")
+	}
 	encoding.Register()
 
 	r.initScreen()
@@ -221,61 +224,68 @@ func (r *FullscreenRenderer) GetChar() Event {
 		// process keyboard:
 	case *tcell.EventKey:
 		alt := (ev.Modifiers() & tcell.ModAlt) > 0
+		keyfn := func(r rune) int {
+			if alt {
+				return CtrlAltA - 'a' + int(r)
+			}
+			return CtrlA - 'a' + int(r)
+		}
 		switch ev.Key() {
 		case tcell.KeyCtrlA:
-			return Event{CtrlA, 0, nil}
+			return Event{keyfn('a'), 0, nil}
 		case tcell.KeyCtrlB:
-			return Event{CtrlB, 0, nil}
+			return Event{keyfn('b'), 0, nil}
 		case tcell.KeyCtrlC:
-			return Event{CtrlC, 0, nil}
+			return Event{keyfn('c'), 0, nil}
 		case tcell.KeyCtrlD:
-			return Event{CtrlD, 0, nil}
+			return Event{keyfn('d'), 0, nil}
 		case tcell.KeyCtrlE:
-			return Event{CtrlE, 0, nil}
+			return Event{keyfn('e'), 0, nil}
 		case tcell.KeyCtrlF:
-			return Event{CtrlF, 0, nil}
+			return Event{keyfn('f'), 0, nil}
 		case tcell.KeyCtrlG:
-			return Event{CtrlG, 0, nil}
+			return Event{keyfn('g'), 0, nil}
+		case tcell.KeyCtrlH:
+			return Event{keyfn('h'), 0, nil}
+		case tcell.KeyCtrlI:
+			return Event{keyfn('i'), 0, nil}
 		case tcell.KeyCtrlJ:
-			return Event{CtrlJ, 0, nil}
+			return Event{keyfn('j'), 0, nil}
 		case tcell.KeyCtrlK:
-			return Event{CtrlK, 0, nil}
+			return Event{keyfn('k'), 0, nil}
 		case tcell.KeyCtrlL:
-			return Event{CtrlL, 0, nil}
+			return Event{keyfn('l'), 0, nil}
 		case tcell.KeyCtrlM:
-			if alt {
-				return Event{AltEnter, 0, nil}
-			}
-			return Event{CtrlM, 0, nil}
+			return Event{keyfn('m'), 0, nil}
 		case tcell.KeyCtrlN:
-			return Event{CtrlN, 0, nil}
+			return Event{keyfn('n'), 0, nil}
 		case tcell.KeyCtrlO:
-			return Event{CtrlO, 0, nil}
+			return Event{keyfn('o'), 0, nil}
 		case tcell.KeyCtrlP:
-			return Event{CtrlP, 0, nil}
+			return Event{keyfn('p'), 0, nil}
 		case tcell.KeyCtrlQ:
-			return Event{CtrlQ, 0, nil}
+			return Event{keyfn('q'), 0, nil}
 		case tcell.KeyCtrlR:
-			return Event{CtrlR, 0, nil}
+			return Event{keyfn('r'), 0, nil}
 		case tcell.KeyCtrlS:
-			return Event{CtrlS, 0, nil}
+			return Event{keyfn('s'), 0, nil}
 		case tcell.KeyCtrlT:
-			return Event{CtrlT, 0, nil}
+			return Event{keyfn('t'), 0, nil}
 		case tcell.KeyCtrlU:
-			return Event{CtrlU, 0, nil}
+			return Event{keyfn('u'), 0, nil}
 		case tcell.KeyCtrlV:
-			return Event{CtrlV, 0, nil}
+			return Event{keyfn('v'), 0, nil}
 		case tcell.KeyCtrlW:
-			return Event{CtrlW, 0, nil}
+			return Event{keyfn('w'), 0, nil}
 		case tcell.KeyCtrlX:
-			return Event{CtrlX, 0, nil}
+			return Event{keyfn('x'), 0, nil}
 		case tcell.KeyCtrlY:
-			return Event{CtrlY, 0, nil}
+			return Event{keyfn('y'), 0, nil}
 		case tcell.KeyCtrlZ:
-			return Event{CtrlZ, 0, nil}
+			return Event{keyfn('z'), 0, nil}
 		case tcell.KeyCtrlSpace:
 			return Event{CtrlSpace, 0, nil}
-		case tcell.KeyBackspace, tcell.KeyBackspace2:
+		case tcell.KeyBackspace2:
 			if alt {
 				return Event{AltBS, 0, nil}
 			}
@@ -301,8 +311,6 @@ func (r *FullscreenRenderer) GetChar() Event {
 		case tcell.KeyPgDn:
 			return Event{PgDn, 0, nil}
 
-		case tcell.KeyTab:
-			return Event{Tab, 0, nil}
 		case tcell.KeyBacktab:
 			return Event{BTab, 0, nil}
 
@@ -359,13 +367,12 @@ func (r *FullscreenRenderer) GetChar() Event {
 	return Event{Invalid, 0, nil}
 }
 
-func (r *FullscreenRenderer) Pause() {
+func (r *FullscreenRenderer) Pause(bool) {
 	_screen.Fini()
 }
 
-func (r *FullscreenRenderer) Resume() bool {
+func (r *FullscreenRenderer) Resume(bool) {
 	r.initScreen()
-	return true
 }
 
 func (r *FullscreenRenderer) Close() {
