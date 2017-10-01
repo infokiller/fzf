@@ -1,13 +1,53 @@
 CHANGELOG
 =========
 
+0.17.0-2
+--------
+
+A maintenance release for auxiliary scripts. fzf binaries are not updated.
+
+- Experimental support for the builtin terminal of Vim 8
+    - fzf can now run inside GVim
+- Updated Vim plugin to better handle `&shell` issue on fish
+- Fixed a bug of fzf-tmux where invalid output is generated
+- Fixed fzf-tmux to work even when `tput` does not work
+
+0.17.0
+------
+- Performance optimization
+- One can match literal spaces in extended-search mode with a space prepended
+  by a backslash.
+- `--expect` is now additive and can be specified multiple times.
+
+0.16.11
+-------
+- Performance optimization
+- Fixed missing preview update
+
+0.16.10
+-------
+- Fixed invalid handling of ANSI colors in preview window
+- Further improved `--ansi` performance
+
+0.16.9
+------
+- Memory and performance optimization
+    - Around 20% performance improvement for general use cases
+    - Up to 5x faster processing of `--ansi`
+    - Up to 50% reduction of memory usage
+- Bug fixes and usability improvements
+    - Fixed handling of bracketed paste mode
+    - [ERROR] on info line when the default command failed
+    - More efficient rendering of preview window
+    - `--no-clear` updated for repetitive relaunching scenarios
+
 0.16.8
 ------
 - New `change` event and `top` action for `--bind`
     - `fzf --bind change:top`
         - Move cursor to the top result whenever the query string is changed
-    - `fzf --bind ctrl-u:unix-word-rubout+top`
-        - `top` combined with `unix-word-rubout`
+    - `fzf --bind 'ctrl-w:unix-word-rubout+top,ctrl-u:unix-line-discard+top'`
+        - `top` combined with `unix-word-rubout` and `unix-line-discard`
 - Fixed inconsistent tiebreak scores when `--nth` is used
 - Proper display of tab characters in `--prompt`
 - Fixed not to `--cycle` on page-up/page-down to prevent overshoot

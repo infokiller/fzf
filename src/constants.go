@@ -9,14 +9,17 @@ import (
 
 const (
 	// Current version
-	version = "0.16.8"
+	version = "0.17.0"
 
 	// Core
 	coordinatorDelayMax  time.Duration = 100 * time.Millisecond
 	coordinatorDelayStep time.Duration = 10 * time.Millisecond
 
 	// Reader
-	readerBufferSize = 64 * 1024
+	readerBufferSize       = 64 * 1024
+	readerPollIntervalMin  = 10 * time.Millisecond
+	readerPollIntervalStep = 5 * time.Millisecond
+	readerPollIntervalMax  = 50 * time.Millisecond
 
 	// Terminal
 	initialDelay    = 20 * time.Millisecond
@@ -52,7 +55,7 @@ var defaultCommand string
 
 func init() {
 	if !util.IsWindows() {
-		defaultCommand = `command find -L . -mindepth 1 \( -path '*/\.*' -o -fstype 'sysfs' -o -fstype 'devfs' -o -fstype 'devtmpfs' -o -fstype 'proc' \) -prune -o -type f -print -o -type l -print 2> /dev/null | cut -b3-`
+		defaultCommand = `set -o pipefail; (command find -L . -mindepth 1 \( -path '*/\.*' -o -fstype 'sysfs' -o -fstype 'devfs' -o -fstype 'devtmpfs' -o -fstype 'proc' \) -prune -o -type f -print -o -type l -print || command find -L . -mindepth 1 -path '*/\.*' -prune -o -type f -print -o -type l -print) 2> /dev/null | cut -b3-`
 	} else if os.Getenv("TERM") == "cygwin" {
 		defaultCommand = `sh -c "command find -L . -mindepth 1 -path '*/\.*' -prune -o -type f -print -o -type l -print 2> /dev/null | cut -b3-"`
 	} else {
@@ -68,7 +71,7 @@ const (
 	EvtSearchProgress
 	EvtSearchFin
 	EvtHeader
-	EvtClose
+	EvtReady
 )
 
 const (
