@@ -59,7 +59,7 @@ bindkey '\ec' fzf-cd-widget
 fzf-history-widget() {
   setopt localoptions noglobsubst pipefail 2> /dev/null
   local line
-  line=$(python "$HOME/.my_scripts/shell/history/shell_history_choose_line.py" \
+  line=$("$HOME/.my_scripts/shell/history/shell_history_choose_line" \
       --initial-query "${LBUFFER//$/\\$}")
   local ret=$?
   if [[ $ret -eq 0 && -n $line ]]; then
