@@ -1,12 +1,5 @@
 ifndef GOOS
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Darwin)
-	GOOS := darwin
-else ifeq ($(UNAME_S),Linux)
-	GOOS := linux
-else
-$(error "$$GOOS is not defined.")
-endif
+GOOS        := $(word 1, $(subst /, " ", $(word 4, $(shell go version))))
 endif
 
 MAKEFILE    := $(realpath $(lastword $(MAKEFILE_LIST)))
@@ -135,4 +128,12 @@ target/$(BINARYARM8): $(SOURCES) vendor
 bin/fzf: target/$(BINARY) | bin
 	cp -f target/$(BINARY) bin/fzf
 
-.PHONY: all release release-all test install clean
+docker:
+	docker build -t fzf-arch .
+	docker run -it fzf-arch tmux
+
+docker-test:
+	docker build -t fzf-arch .
+	docker run -it fzf-arch
+
+.PHONY: all release release-all test install clean docker docker-test

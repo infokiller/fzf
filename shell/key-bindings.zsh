@@ -36,6 +36,16 @@ fzf-file-widget() {
 zle     -N   fzf-file-widget
 bindkey '^T' fzf-file-widget
 
+# Ensure precmds are run after cd
+fzf-redraw-prompt() {
+  local precmd
+  for precmd in $precmd_functions; do
+    $precmd
+  done
+  zle reset-prompt
+}
+zle -N fzf-redraw-prompt
+
 # ALT-C - cd into the selected directory
 fzf-cd-widget() {
   local cmd="${FZF_ALT_C_COMMAND:-"command find -L . -mindepth 1 \\( -path '*/\\.*' -o -fstype 'sysfs' -o -fstype 'devfs' -o -fstype 'devtmpfs' -o -fstype 'proc' \\) -prune \
@@ -48,7 +58,7 @@ fzf-cd-widget() {
   fi
   cd "$dir"
   local ret=$?
-  zle reset-prompt
+  zle fzf-redraw-prompt
   typeset -f zle-line-init >/dev/null && zle zle-line-init
   return $ret
 }
@@ -57,13 +67,16 @@ bindkey '\ec' fzf-cd-widget
 
 # CTRL-R - Paste the selected command from history into the command line
 fzf-history-widget() {
-  setopt localoptions noglobsubst pipefail 2> /dev/null
-  local line
-  line=$("$HOME/.my_scripts/shell/history/wrappers/shell_history_choose_line.py" \
+  local selected num
+  setopt localoptions noglobsubst noposixbuiltins pipefail 2> /dev/null
+  # NOTE: I replace the expression "${(qqq)LBUFFER}" with "${LBUFFER//$/\\$}"
+  # because otherwise I got two quotation marks in the initial query.
+  selected=$("$HOME/.my_scripts/shell/history/wrappers/shell_history_choose_line.py" \
       --initial-query "${LBUFFER//$/\\$}")
+
   local ret=$?
-  if [[ $ret -eq 0 && -n $line ]]; then
-    LBUFFER="$line"
+  if [[ $ret -eq 0 && -n $selected ]]; then
+    LBUFFER="$selected"
     RBUFFER=""
   fi
   zle redisplay
