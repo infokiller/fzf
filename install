@@ -266,12 +266,11 @@ for shell in $shells; do
   fi
 
   cat > "$src" << EOF
-=======
 # Setup fzf
 # ---------
-if [[ ! "\$PATH" == *$fzf_base_esc/bin* ]]; then
-  export PATH="\$PATH:$fzf_base/bin"
-fi
+# if [[ ! "\$PATH" == *$fzf_base_esc/bin* ]]; then
+#   export PATH="\$PATH:$fzf_base/bin"
+# fi
 
 # Auto-completion
 # ---------------
