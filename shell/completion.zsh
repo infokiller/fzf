@@ -60,8 +60,7 @@ __fzf_generic_path_completion() {
       if [ -n "$matches" ]; then
         LBUFFER="$lbuf$matches$tail"
       fi
-      zle redisplay
-      typeset -f zle-line-init >/dev/null && zle zle-line-init
+      zle reset-prompt
       break
     fi
     dir=$(dirname "$dir")
@@ -100,8 +99,7 @@ _fzf_complete() {
   if [ -n "$matches" ]; then
     LBUFFER="$lbuf$matches"
   fi
-  zle redisplay
-  typeset -f zle-line-init >/dev/null && zle zle-line-init
+  zle reset-prompt
   command rm -f "$fifo"
 }
 
@@ -114,7 +112,7 @@ _fzf_complete_telnet() {
 
 _fzf_complete_ssh() {
   _fzf_complete '+m' "$@" < <(
-    command cat <(cat ~/.ssh/config /etc/ssh/ssh_config 2> /dev/null | command grep -i '^host' | command grep -v '*' | awk '{for (i = 2; i <= NF; i++) print $1 " " $i}') \
+    command cat <(cat ~/.ssh/config /etc/ssh/ssh_config 2> /dev/null | command grep -i '^host ' | command grep -v '[*?]' | awk '{for (i = 2; i <= NF; i++) print $1 " " $i}') \
         <(command grep -oE '^[[a-z0-9.,:-]+' ~/.ssh/known_hosts | tr ',' '\n' | tr -d '[' | awk '{ print $1 " " $1 }') \
         <(command grep -v '^\s*\(#\|$\)' /etc/hosts | command grep -Fv '0.0.0.0') |
         awk '{if (length($2) > 0) {print $2}}' | sort -u
@@ -165,8 +163,7 @@ fzf-completion() {
     if [ -n "$matches" ]; then
       LBUFFER="$LBUFFER$matches"
     fi
-    zle redisplay
-    typeset -f zle-line-init >/dev/null && zle zle-line-init
+    zle reset-prompt
   # Trigger sequence given
   elif [ ${#tokens} -gt 1 -a "$tail" = "$trigger" ]; then
     d_cmds=(${=FZF_COMPLETION_DIR_COMMANDS:-cd pushd rmdir})

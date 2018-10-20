@@ -59,6 +59,7 @@ type Terminal struct {
 	inlineInfo bool
 	prompt     string
 	promptLen  int
+	queryLen   [2]int
 	layout     layoutType
 	fullscreen bool
 	hscroll    bool
@@ -68,6 +69,7 @@ type Terminal struct {
 	cx         int
 	cy         int
 	offset     int
+	xoffset    int
 	yanked     []rune
 	input      []rune
 	multi      bool
@@ -112,6 +114,7 @@ type Terminal struct {
 	prevLines  []itemLine
 	suppress   bool
 	startChan  chan bool
+	killChan   chan int
 	slab       *util.Slab
 	theme      *tui.ColorTheme
 	tui        tui.Renderer
@@ -364,6 +367,7 @@ func NewTerminal(opts *Options, eventBox *util.EventBox) *Terminal {
 	t := Terminal{
 		initDelay:  delay,
 		inlineInfo: opts.InlineInfo,
+		queryLen:   [2]int{0, 0},
 		layout:     opts.Layout,
 		fullscreen: fullscreen,
 		hscroll:    opts.Hscroll,
@@ -373,6 +377,7 @@ func NewTerminal(opts *Options, eventBox *util.EventBox) *Terminal {
 		cx:         len(input),
 		cy:         0,
 		offset:     0,
+		xoffset:    0,
 		yanked:     []rune{},
 		input:      input,
 		multi:      opts.Multi,
@@ -410,6 +415,7 @@ func NewTerminal(opts *Options, eventBox *util.EventBox) *Terminal {
 		slab:       util.MakeSlab(slab16Size, slab32Size),
 		theme:      opts.Theme,
 		startChan:  make(chan bool, 1),
+		killChan:   make(chan int),
 		tui:        renderer,
 		initFunc:   func() { renderer.Init() }}
 	t.prompt, t.promptLen = t.processTabs([]rune(opts.Prompt), 0)
@@ -640,7 +646,6 @@ func (t *Terminal) resizeWindows() {
 	for i := 0; i < t.window.Height(); i++ {
 		t.window.MoveAndClear(i, 0)
 	}
-	t.truncateQuery()
 }
 
 func (t *Terminal) move(y int, x int, clear bool) {
@@ -668,20 +673,44 @@ func (t *Terminal) move(y int, x int, clear bool) {
 	}
 }
 
+func (t *Terminal) truncateQuery() {
+	t.input, _ = t.trimRight(t.input, maxPatternLength)
+	t.cx = util.Constrain(t.cx, 0, len(t.input))
+}
+
+func (t *Terminal) updatePromptOffset() ([]rune, []rune) {
+	maxWidth := util.Max(1, t.window.Width()-t.promptLen-1)
+
+	_, overflow := t.trimLeft(t.input[:t.cx], maxWidth)
+	minOffset := int(overflow)
+	maxOffset := util.Min(util.Min(len(t.input), minOffset+maxWidth), t.cx)
+
+	t.xoffset = util.Constrain(t.xoffset, minOffset, maxOffset)
+	before, _ := t.trimLeft(t.input[t.xoffset:t.cx], maxWidth)
+	beforeLen := t.displayWidth(before)
+	after, _ := t.trimRight(t.input[t.cx:], maxWidth-beforeLen)
+	afterLen := t.displayWidth(after)
+	t.queryLen = [2]int{beforeLen, afterLen}
+	return before, after
+}
+
 func (t *Terminal) placeCursor() {
-	t.move(0, t.promptLen+t.displayWidth(t.input[:t.cx]), false)
+	t.move(0, t.promptLen+t.queryLen[0], false)
 }
 
 func (t *Terminal) printPrompt() {
 	t.move(0, 0, true)
 	t.window.CPrint(tui.ColPrompt, t.strong, t.prompt)
-	t.window.CPrint(tui.ColNormal, t.strong, string(t.input))
+
+	before, after := t.updatePromptOffset()
+	t.window.CPrint(tui.ColNormal, t.strong, string(before))
+	t.window.CPrint(tui.ColNormal, t.strong, string(after))
 }
 
 func (t *Terminal) printInfo() {
 	pos := 0
 	if t.inlineInfo {
-		pos = t.promptLen + t.displayWidth(t.input) + 1
+		pos = t.promptLen + t.queryLen[0] + t.queryLen[1] + 1
 		if pos+len(" < ") > t.window.Width() {
 			return
 		}
@@ -1271,7 +1300,7 @@ func (t *Terminal) executeCommand(template string, forcePlus bool, background bo
 		return
 	}
 	command := replacePlaceholder(template, t.ansi, t.delimiter, forcePlus, string(t.input), list)
-	cmd := util.ExecCommand(command)
+	cmd := util.ExecCommand(command, false)
 	if !background {
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -1282,7 +1311,9 @@ func (t *Terminal) executeCommand(template string, forcePlus bool, background bo
 		t.redraw()
 		t.refresh()
 	} else {
+		t.tui.Pause(false)
 		cmd.Run()
+		t.tui.Resume(false)
 	}
 }
 
@@ -1334,12 +1365,6 @@ func (t *Terminal) buildPlusList(template string, forcePlus bool) (bool, []*Item
 	return true, sels
 }
 
-func (t *Terminal) truncateQuery() {
-	maxPatternLength := util.Max(1, t.window.Width()-t.promptLen-1)
-	t.input, _ = t.trimRight(t.input, maxPatternLength)
-	t.cx = util.Constrain(t.cx, 0, len(t.input))
-}
-
 func (t *Terminal) selectItem(item *Item) {
 	t.selected[item.Index()] = selectedItem{time.Now(), item}
 	t.version++
@@ -1356,6 +1381,20 @@ func (t *Terminal) toggleItem(item *Item) {
 	} else {
 		t.deselectItem(item)
 	}
+}
+
+func (t *Terminal) killPreview(code int) {
+	select {
+	case t.killChan <- code:
+	default:
+		if code != exitCancel {
+			os.Exit(code)
+		}
+	}
+}
+
+func (t *Terminal) cancelPreview() {
+	t.killPreview(exitCancel)
 }
 
 // Loop is called to start Terminal I/O
@@ -1392,10 +1431,10 @@ func (t *Terminal) Loop() {
 		t.initFunc()
 		t.resizeWindows()
 		t.printPrompt()
-		t.placeCursor()
-		t.refresh()
 		t.printInfo()
 		t.printHeader()
+		t.placeCursor()
+		t.refresh()
 		t.mutex.Unlock()
 		go func() {
 			timer := time.NewTimer(t.initDelay)
@@ -1435,15 +1474,43 @@ func (t *Terminal) Loop() {
 				if request[0] != nil {
 					command := replacePlaceholder(t.preview.command,
 						t.ansi, t.delimiter, false, string(t.input), request)
-					cmd := util.ExecCommand(command)
+					cmd := util.ExecCommand(command, true)
 					if t.pwindow != nil {
 						env := os.Environ()
 						env = append(env, fmt.Sprintf("LINES=%d", t.pwindow.Height()))
 						env = append(env, fmt.Sprintf("COLUMNS=%d", t.pwindow.Width()))
 						cmd.Env = env
 					}
-					out, _ := cmd.CombinedOutput()
-					t.reqBox.Set(reqPreviewDisplay, string(out))
+					var out bytes.Buffer
+					cmd.Stdout = &out
+					cmd.Stderr = &out
+					cmd.Start()
+					finishChan := make(chan bool, 1)
+					updateChan := make(chan bool)
+					go func() {
+						select {
+						case code := <-t.killChan:
+							if code != exitCancel {
+								util.KillCommand(cmd)
+								os.Exit(code)
+							} else {
+								select {
+								case <-time.After(previewCancelWait):
+									util.KillCommand(cmd)
+									updateChan <- true
+								case <-finishChan:
+									updateChan <- false
+								}
+							}
+						case <-finishChan:
+							updateChan <- false
+						}
+					}()
+					cmd.Wait()
+					finishChan <- true
+					if out.Len() > 0 || !<-updateChan {
+						t.reqBox.Set(reqPreviewDisplay, string(out.Bytes()))
+					}
 				} else {
 					t.reqBox.Set(reqPreviewDisplay, "")
 				}
@@ -1461,7 +1528,7 @@ func (t *Terminal) Loop() {
 			t.history.append(string(t.input))
 		}
 		// prof.Stop()
-		os.Exit(code)
+		t.killPreview(code)
 	}
 
 	go func() {
@@ -1488,6 +1555,7 @@ func (t *Terminal) Loop() {
 							focused = currentFocus
 							if t.isPreviewEnabled() {
 								_, list := t.buildPlusList(t.preview.command, false)
+								t.cancelPreview()
 								t.previewBox.Set(reqPreviewEnqueue, list)
 							}
 						}
@@ -1529,9 +1597,9 @@ func (t *Terminal) Loop() {
 					}
 				}
 				t.placeCursor()
+				t.refresh()
 				t.mutex.Unlock()
 			})
-			t.refresh()
 		}
 	}()
 
@@ -1597,6 +1665,7 @@ func (t *Terminal) Loop() {
 					if t.previewer.enabled {
 						valid, list := t.buildPlusList(t.preview.command, false)
 						if valid {
+							t.cancelPreview()
 							t.previewBox.Set(reqPreviewEnqueue, list)
 						}
 					}
@@ -1852,7 +1921,7 @@ func (t *Terminal) Loop() {
 					} else if me.Down {
 						if my == 0 && mx >= 0 {
 							// Prompt
-							t.cx = mx
+							t.cx = mx + t.xoffset
 						} else if my >= min {
 							// List
 							if t.vset(t.offset+my-min) && t.multi && me.Mod {

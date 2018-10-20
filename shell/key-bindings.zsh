@@ -29,8 +29,7 @@ __fzfcmd() {
 fzf-file-widget() {
   LBUFFER="${LBUFFER}$(__fsel)"
   local ret=$?
-  zle redisplay
-  typeset -f zle-line-init >/dev/null && zle zle-line-init
+  zle reset-prompt
   return $ret
 }
 zle     -N   fzf-file-widget
@@ -59,7 +58,6 @@ fzf-cd-widget() {
   cd "$dir"
   local ret=$?
   zle fzf-redraw-prompt
-  typeset -f zle-line-init >/dev/null && zle zle-line-init
   return $ret
 }
 zle     -N    fzf-cd-widget
@@ -79,8 +77,7 @@ fzf-history-widget() {
     LBUFFER="$selected"
     RBUFFER=""
   fi
-  zle redisplay
-  typeset -f zle-line-init >/dev/null && zle zle-line-init
+  zle reset-prompt
   return $ret
 }
 zle     -N   fzf-history-widget
