@@ -52,7 +52,7 @@ __fzf_cd__() {
 }
 
 __fzf_history__() {
-  python "$HOME/.my_scripts/shell/history/wrappers/shell_history_choose_line.py"
+  "$HOME/.my_scripts/shell/history/wrappers/shell_history_choose_line.py"
 }
 
 if [[ ! -o vi ]]; then
