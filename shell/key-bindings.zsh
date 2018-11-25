@@ -69,7 +69,8 @@ fzf-history-widget() {
   setopt localoptions noglobsubst noposixbuiltins pipefail 2> /dev/null
   # NOTE: I replace the expression "${(qqq)LBUFFER}" with "${LBUFFER//$/\\$}"
   # because otherwise I got two quotation marks in the initial query.
-  selected=$("$HOME/.my_scripts/shell/history/wrappers/shell_history_choose_line.py" \
+  selected=$(conda-run base_shell_history \
+      "$HOME/.my_scripts/shell/history/shell_history_choose_line.py" \
       --initial-query "${LBUFFER//$/\\$}")
 
   local ret=$?

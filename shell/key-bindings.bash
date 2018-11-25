@@ -52,7 +52,8 @@ __fzf_cd__() {
 }
 
 __fzf_history__() {
-  "$HOME/.my_scripts/shell/history/wrappers/shell_history_choose_line.py"
+  conda-run base_shell_history \
+      "$HOME/.my_scripts/shell/history/shell_history_choose_line.py"
 }
 
 if [[ ! -o vi ]]; then
