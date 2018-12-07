@@ -1,3 +1,4 @@
+*.zwc
 bin/fzf
 bin/fzf.exe
 target
