@@ -1837,8 +1837,9 @@ func (t *Terminal) Loop() {
 				}
 			case actDeselectAll:
 				if t.multi > 0 {
-					t.selected = make(map[int32]selectedItem)
-					t.version++
+					for i := 0; i < t.merger.Length() && len(t.selected) > 0; i++ {
+						t.deselectItem(t.merger.Get(i).item)
+					}
 					req(reqList, reqInfo)
 				}
 			case actToggle:
